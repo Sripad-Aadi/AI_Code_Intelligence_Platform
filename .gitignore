@@ -1,0 +1,10 @@
+env.py
+env
+
+venv
+venv/
+
+logs
+logs*
+
+node_modules/
