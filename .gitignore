@@ -1,10 +1,28 @@
-env.py
-env
-
-venv
+# Python
 venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
 
-logs
+# Secrets — never commit real credentials
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+dist/
+frontend/dist/
+
+# Logs
+logs/
 logs*
 
-node_modules/
+# Misc
+.DS_Store
+
+*.doc
+*.docx

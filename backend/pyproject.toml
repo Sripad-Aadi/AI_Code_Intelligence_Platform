@@ -1,28 +1,30 @@
 [project]
-name = "my_project"
+name = "ai-software-intelligence-platform-backend"
 version = "0.1.0"
-description = "A clean Python skeleton with linting, formatting, and tests."
+description = "FastAPI backend for the AI Software Engineering Intelligence Platform."
 requires-python = ">=3.10"
 
 [tool.ruff]
 # Target Python version, max line length, and source directories
-target-version = "py310"
+target-version = "py312"
 line-length = 88
-src = ["src", "tests"]
+src = ["app"]
 
 [tool.ruff.lint]
-# Select specific linter rulesets
 # E/W = Flake8 errors/warnings, F = Pyflakes, I = Isort (import sorting)
 select = ["E", "W", "F", "I"]
 ignore = []
 
 [tool.ruff.format]
-# Enforce Black-compatible formatting styles
 quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
 
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["."]
 testpaths = ["tests"]
