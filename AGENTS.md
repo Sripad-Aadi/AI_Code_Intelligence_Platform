@@ -3,9 +3,10 @@
 FastAPI backend + React (Vite) frontend, no Docker. Development is driven by the
 19-step plan in `AI_Software_Engineering_Intelligence_Platform_Implementation_Plan_v2.docx`,
 executed in strict Step 1→19 order with an acceptance gate after each step.
-Steps 1–5 are committed: Step 2 (Supabase auth + projects + repo CRUD), Step 3
-(GitHub OAuth + shallow clone), Step 4 (repo ingestion via Celery), and Step 5
-(structural code analysis via tree-sitter). Step 3's
+Steps 1–6 are committed: Step 2 (Supabase auth + projects + repo CRUD), Step 3
+(GitHub OAuth + shallow clone), Step 4 (repo ingestion via Celery), Step 5
+(structural code analysis via tree-sitter), and Step 6 (React frontend).
+Step 3's
 end-to-end proof (OAuth → list repos → shallow clone) was verified on 2026-09-26:
 a dev user linked GitHub (`Sripad-Aadi`), listed 18 repos, attached +
 shallow-cloned `Sripad-Aadi/AI_Code_Intelligence_Platform` into `backend/.clones/`
@@ -18,8 +19,12 @@ files/symbols/imports/edges persisted, `GET /repos/{id}/files|symbols|edges`
 return data, import edges resolve through the `backend/` subdir (26 Python
 edges: e.g. `backend/app/api/projects.py => backend/app/models/project.py`),
 symbol span accuracy verified against source (`lifespan` 12–21, `GET /health`
-41–43 in `backend/app/main.py`). The frontend is still untouched Vite
-boilerplate (Step 6).
+41–43 in `backend/app/main.py`).
+Step 6's proof ran the same day: the frontend (react-router 7 + TanStack Query
+5 + Tailwind 4 + supabase-js) builds (lint + `npm run build` clean) and all 14
+endpoint checks its four pages depend on passed via the API with a demo Supabase
+JWT — including a live Celery ingest (job `524ca91a…` → completed, 99/132
+files, 39 symbols) polled like the Analysis-status page does.
 
 ## Hard rule: `.env` is off-limits
 
@@ -43,11 +48,27 @@ venv\Scripts\alembic upgrade head
 venv\Scripts\alembic current
 ```
 
+Frontend commands (run from `frontend/`; Node 22, no CI server needed):
+
+```powershell
+cd frontend
+npm install            # after first checkout / dep changes
+npm run dev            # Vite dev server on :5173 (proxies via CORS to :8000)
+npm run build          # acceptance gate: tsc -b && vite build
+npm run lint           # eslint (react-refresh/only-export-components is strict: split helpers out of .tsx)
+```
+
 - PowerShell, not bash: heredocs (`cat > x << EOF`) fail; use the `write` tool.
   Inline `python -c` breaks on quotes/f-strings — write a temp `.py` file with
   the `write` tool and run it instead.
 - `ruff format` (not black) is the formatter, even though `tool.black` exists in
   `pyproject.toml`. Alembic files are part of the lint/format gate.
+- **Frontend secrets**: `frontend/.env` (gitignored via root `.gitignore`) only
+  holds public values — `VITE_API_BASE`, `VITE_SUPABASE_URL`,
+  `VITE_SUPABASE_ANON_KEY`. The JWT lives in `localStorage`
+  (`ai_sip_access_token`), same as the test-harness approach. With empty
+  Supabase vars the Login page falls back to pasting a Supabase access token
+  (or `/login?token=<jwt>`), which is enough for the whole app to work.
 
 ## Dependency and config gotchas (verified)
 
@@ -119,6 +140,22 @@ venv\Scripts\alembic current
   `GET /repos/{id}/edges?edge_type=imports|belongs_to` (file→file / symbol→file).
   `chat`, `findings`, `search`, `pull_requests`, `webhooks` are placeholder
   stubs for later steps and remain commented out in `app/main.py`.
+- Step 6 frontend (`frontend/`, Vite 8 + React 19 + TS 6): `src/api/client.ts`
+  is the typed fetch client (Bearer JWT from `localStorage`, 401 clears it,
+  `VITE_API_BASE` default `http://localhost:8000`), `src/api/types.ts` mirrors
+  the Pydantic read schemas. `src/auth/` = AuthProvider (Supabase JWT) +
+  `useAuth` (context kept in `context.ts` because react-refresh forbids
+  non-component exports from `.tsx`). `src/hooks/useJobStatus.ts` polls
+  `GET /jobs/{id}` every 2 s with TanStack Query, stopping at
+  completed/failed. Pages: `Login` (supabase-js email/password + token-paste
+  fallback, consumed once via `?token=`), `Dashboard` (projects CRUD + GitHub
+  link popup via `components/LinkGithub.tsx`), `ProjectDetail` (attach repo
+  from `GET /user/repos`, analyze → navigate to `/jobs/:id?repo=`),
+  `AnalysisStatus` (live poll + counts + language histogram + history),
+  `RepoExplorer` (file tree built client-side from flat paths, symbol table
+  with kind filters, imports/belongs_to edge tables, file-detail pane with
+  symbol spans). Tailwind 4 via `@tailwindcss/vite` (CSS-first, `@import
+  "tailwindcss"`, `@layer components` for `.btn/.card/.badge/...`).
 - Auth is Supabase JWT (RS256 **or ES256** via JWKS — this project's key is
   ES256/EC), decoded in `app/core/security.py`, which
   upserts a local shadow `users` row on first authenticated request — auth

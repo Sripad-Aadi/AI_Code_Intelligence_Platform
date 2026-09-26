@@ -1,75 +1,47 @@
-# React + TypeScript + Vite
+# AI Software Intelligence — frontend (Step 6)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React (Vite) + TypeScript + Tailwind CSS + TanStack Query + React Router.
 
-Currently, two official plugins are available:
+## Scripts
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```sh
+npm install        # install dependencies
+npm run dev        # Vite dev server on http://localhost:5173
+npm run build      # tsc -b && vite build (the acceptance gate)
+npm run lint       # ESLint
+npm run preview    # serve the production build
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+## Environment
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Copy `.env.example` to `.env` and fill in:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+| Variable               | Purpose                                                        |
+| ---------------------- | -------------------------------------------------------------- |
+| `VITE_API_BASE`        | Backend origin (default `http://localhost:8000`)               |
+| `VITE_SUPABASE_URL`    | Supabase project URL — enables email/password sign-in          |
+| `VITE_SUPABASE_ANON_KEY` | Supabase publishable key — enables email/password sign-in    |
 
-```
+Everything is embedded in the browser bundle, so only public values belong
+here. If the Supabase vars are empty, the login page falls back to pasting a
+Supabase access token JWT (full flow works this way too — the backend only
+ever sees the JWT).
+
+## Pages
+
+- `/` — **Dashboard**: project list, create/delete projects, link GitHub
+  (`GET /auth/github/status` + OAuth popup).
+- `/projects/:projectId` — **Project detail**: attach GitHub repos
+  (shallow clone), trigger analysis (`POST /repos/{id}/ingest`).
+- `/jobs/:jobId` — **Analysis status**: polls `GET /jobs/{id}` every 2 s via
+  `src/hooks/useJobStatus.ts` while the Celery job is `queued`/`running`.
+- `/repos/:repoId` — **Repo explorer**: file tree + symbol table + import/
+  belongs_to edges from the Step-5 structural analysis endpoints.
+
+## Auth notes
+
+The backend authenticates Supabase JWTs (`Authorization: Bearer <jwt>`).
+This app stores the JWT in `localStorage` (`ai_sip_access_token`), which is
+the same approach the existing test harness uses. A 401/403 clears it and
+redirects to `/login`. You can sign in in one step via
+`http://localhost:5173/login?token=<jwt>`.
