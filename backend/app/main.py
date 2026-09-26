@@ -5,7 +5,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth_router, ingestion_router, projects_router, repos_router
+from app.api import (
+    analysis_router,
+    auth_router,
+    ingestion_router,
+    projects_router,
+    repos_router,
+)
 
 
 @asynccontextmanager
@@ -48,6 +54,7 @@ app.include_router(auth_router)
 app.include_router(projects_router)
 app.include_router(repos_router)
 app.include_router(ingestion_router)
+app.include_router(analysis_router)
 
 # Placeholders for future steps (Step 3+)
 # from app.api import chat, findings, pull_requests, search, webhooks

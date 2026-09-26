@@ -3,8 +3,9 @@
 FastAPI backend + React (Vite) frontend, no Docker. Development is driven by the
 19-step plan in `AI_Software_Engineering_Intelligence_Platform_Implementation_Plan_v2.docx`,
 executed in strict Step 1→19 order with an acceptance gate after each step.
-Steps 1–4 are committed: Step 2 (Supabase auth + projects + repo CRUD), Step 3
-(GitHub OAuth + shallow clone), and Step 4 (repo ingestion via Celery). Step 3's
+Steps 1–5 are committed: Step 2 (Supabase auth + projects + repo CRUD), Step 3
+(GitHub OAuth + shallow clone), Step 4 (repo ingestion via Celery), and Step 5
+(structural code analysis via tree-sitter). Step 3's
 end-to-end proof (OAuth → list repos → shallow clone) was verified on 2026-09-26:
 a dev user linked GitHub (`Sripad-Aadi`), listed 18 repos, attached +
 shallow-cloned `Sripad-Aadi/AI_Code_Intelligence_Platform` into `backend/.clones/`
@@ -12,7 +13,13 @@ shallow-cloned `Sripad-Aadi/AI_Code_Intelligence_Platform` into `backend/.clones
 worker (Upstash Redis broker) executed `ingestion.ingest_repo` on that clone —
 filters + language detection → 132 files scanned / 99 indexed, with a language
 histogram stored on the `analysis_jobs` row and pollable via `GET /jobs/{id}`.
-The frontend is still untouched Vite boilerplate (Step 6).
+Step 5's E2E proof ran the same day through the API/worker: re-ingest →
+files/symbols/imports/edges persisted, `GET /repos/{id}/files|symbols|edges`
+return data, import edges resolve through the `backend/` subdir (26 Python
+edges: e.g. `backend/app/api/projects.py => backend/app/models/project.py`),
+symbol span accuracy verified against source (`lifespan` 12–21, `GET /health`
+41–43 in `backend/app/main.py`). The frontend is still untouched Vite
+boilerplate (Step 6).
 
 ## Hard rule: `.env` is off-limits
 
@@ -26,11 +33,11 @@ The frontend is still untouched Vite boilerplate (Step 6).
 
 ```powershell
 cd backend
-venv\Scripts\python -m pytest                        # tests (9: 3 smoke + 6 ingestion)
+venv\Scripts\python -m pytest                        # tests (20: 3 smoke + 6 ingestion + 11 analysis)
 venv\Scripts\python -m ruff check app tests alembic  # lint: E/W/F/I, line 88
 venv\Scripts\python -m ruff format --check app tests alembic
 venv\Scripts\uvicorn app.main:app --reload           # API on :8000
-venv\Scripts\celery -A app.worker worker --pool=solo --loglevel=info  # Step 4 worker (2nd terminal)
+venv\Scripts\celery -A app.worker worker --pool=solo --loglevel=info  # Step 5 worker (2nd terminal)
 venv\Scripts\alembic revision --autogenerate -m "msg"
 venv\Scripts\alembic upgrade head
 venv\Scripts\alembic current
@@ -57,6 +64,15 @@ venv\Scripts\alembic current
   `GITHUB_CLIENT_SECRET` — importing `app.config` raises a pydantic
   ValidationError when any are missing. Alembic is exempt: `alembic/env.py`
   imports only `app.db.base`, so migrations need just `DATABASE_URL` exported.
+- **tree-sitter pins (Step 5, verified empirically)**: `tree-sitter-languages`
+  calls the pre-0.22 `Language(path, name)` constructor, so `tree-sitter`
+  must be `==0.21.3` (0.24 and 0.26 both broke). Also, in 0.21 bindings
+  `Node.start_point`/`end_point` are plain `(row, col)` tuples (no `.row`) —
+  `app/analysis/parsers.py` handles both via `_point_row`. Grammars available:
+  python, javascript, typescript, tsx, go, rust, java, c, cpp, ruby, php,
+  kotlin, scala, bash, css, html, json, yaml, toml, sql, lua, r, elixir,
+  erlang, haskell. **Missing** (files recorded, not parsed): c-sharp, swift,
+  dart, zig, scss.
 
 ## Alembic / database state
 
@@ -66,9 +82,12 @@ venv\Scripts\alembic current
   (already done).
 - Autogenerate works: `alembic/env.py` imports `app.models`, so `Base.metadata`
   is populated and real migrations are produced (verified while generating the
-  `analysis_jobs` table). Applied head: `79b4d93cb86f` (add analysis_jobs),
-  previous: `12097b55786a` (users GitHub columns). `alembic current` =
-  `79b4d93cb86f (head)`.
+  `analysis_jobs` table). Applied head: `a6dac032b9b5` (add structural analysis
+  tables), previous: `79b4d93cb86f` (add analysis_jobs), before that:
+  `12097b55786a` (users GitHub columns). `alembic current` =
+  `a6dac032b9b5 (head)`. The `symbols_indexed` add_column carries
+  `server_default='0'` (existing analysis_jobs rows would otherwise fail the
+  NOT NULL ALTER).
 
 ## Supabase free-tier quirks
 
@@ -87,15 +106,19 @@ venv\Scripts\alembic current
 
 ## Structure
 
-- Mounted routers: `auth`, `projects`, `repos`, `ingestion` (`app/main.py`).
-  `auth` has the real GitHub OAuth flow (Step 3): `GET /auth/github/login?state=<supabase-jwt>`
-  (307 → GitHub), `GET /auth/github/callback` (exchanges code, stores the GitHub
-  token on the caller's `users` row), `GET /auth/github/status`.
+- Mounted routers: `auth`, `projects`, `repos`, `ingestion`, `analysis`
+  (`app/main.py`). `auth` has the real GitHub OAuth flow (Step 3):
+  `GET /auth/github/login?state=<supabase-jwt>` (307 → GitHub),
+  `GET /auth/github/callback` (exchanges code, stores the GitHub token on the
+  caller's `users` row), `GET /auth/github/status`.
   `ingestion` (Step 4) dispatches repo scans to Celery and is what the frontend
   polls: `POST /repos/{id}/ingest` (202 + enqueue), `GET /jobs/{job_id}` (status),
-  `GET /repos/{id}/jobs` (history). `chat`, `findings`, `search`,
-  `pull_requests`, `webhooks` are placeholder stubs for later steps and remain
-  commented out in `app/main.py`.
+  `GET /repos/{id}/jobs` (history). `analysis` (Step 5) surfaces the parsed
+  structure: `GET /repos/{id}/files` (path/limit/offset), `GET /files/{file_id}`
+  (file + its symbols), `GET /repos/{id}/symbols` (kind/name filters), and
+  `GET /repos/{id}/edges?edge_type=imports|belongs_to` (file→file / symbol→file).
+  `chat`, `findings`, `search`, `pull_requests`, `webhooks` are placeholder
+  stubs for later steps and remain commented out in `app/main.py`.
 - Auth is Supabase JWT (RS256 **or ES256** via JWKS — this project's key is
   ES256/EC), decoded in `app/core/security.py`, which
   upserts a local shadow `users` row on first authenticated request — auth
@@ -115,7 +138,30 @@ venv\Scripts\alembic current
   `app/worker.py` (Celery app), `app/tasks/inject_repo.py` (`ingestion.ingest_repo`
   task — walks the clone, updates the `analysis_jobs` row). `analysis_jobs`
   columns: id, repo_id, status, started_at, finished_at, error, files_scanned,
-  files_indexed, languages (JSON histogram), created_at.
+  files_indexed, symbols_indexed, languages (JSON histogram), created_at.
+- Step 5 structural analysis: `app/analysis/parsers.py` (tree-sitter parse →
+  symbols with precise 1-based line spans, imports, FastAPI/Flask + Express
+  routes; per-grammar cached parsers; a bad parse returns `ParseResult(error)`
+  rather than raising, recorded on `files.parse_error`), `app/analysis/resolve.py`
+  (import specifier → repo-relative path; Python absolute imports walk the
+  ancestors of the importing file's dir — handles `repo/backend/app/...`
+  layouts; JS/TS relative + `@/`; best-effort for the rest; local-only, target
+  must exist on disk). New tables: `files` (unique repo_id+path, parse_error),
+  `symbols` (kind function|class|method|route, 1-based start_line/end_line),
+  `imports` (module/is_relative/resolved_path), `edges` (source_kind
+  file|symbol, edge_type imports|belongs_to, target FK files.id). Route-decorated
+  Python handlers count once (the route symbol; the inner function_definition
+  is skipped); JS/TS named arrow functions (`const fn = () => {}`) are captured
+  as symbols.
+- **CRITICAL flush-ordering gotcha**: the ORM unit-of-work sorts INSERTs by
+  declared `relationship()`s, and this project's models declare none — the
+  insert order falls out of mapper registration order (CodeEdge registers first,
+  so in one flush SQLAlchemy INSERTs `edges` *before* `files`, tripping the FK
+  constraints). `ingest_repo` therefore persists in explicit phases:
+  `db.add_all(file_rows)` → `flush()` → `symbols+imports` → `flush()` → `edges`,
+  and calls `db.commit()` *inside* the try so a commit-time failure is recorded
+  on the job (the `db_session()` context manager commits in `__exit__`, which is
+  outside the task's try and would otherwise leave the job stuck `queued`).
 - Frontend `src/pages/*`, `src/api/client.ts`, `src/hooks/useJobStatus.ts` are
   empty; react-router, react-query, and tailwind are not installed (needed at
   Step 6).
