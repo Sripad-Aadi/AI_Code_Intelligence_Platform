@@ -26,6 +26,14 @@ class Settings(BaseSettings):
         default="http://localhost:8000/auth/github/callback",
         description="GitHub OAuth redirect URI",
     )
+    GITHUB_SCOPE: str = Field(
+        default="repo", description="GitHub OAuth scope(s) — repo = list + clone"
+    )
+
+    # Where shallow clones land on the server's own disk (Step 3)
+    CLONE_ROOT_DIR: str = Field(
+        default="./.clones", description="Dir for shallow git clones of repos"
+    )
 
     # LLM Provider
     LLM_PROVIDER: str = Field(default="groq", description="LLM provider (groq|gemini)")

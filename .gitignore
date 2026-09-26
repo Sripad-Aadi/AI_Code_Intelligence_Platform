@@ -21,6 +21,10 @@ frontend/dist/
 logs/
 logs*
 
+# Local shallow clones of user repos (Step 3)
+backend/.clones/
+.clones/
+
 # Misc
 .DS_Store
 
