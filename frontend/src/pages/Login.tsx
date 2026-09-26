@@ -19,6 +19,7 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [tokenInput, setTokenInput] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   // One-shot: accept ?token=<supabase-jwt> from a URL (useful for demos).
@@ -42,21 +43,62 @@ export default function Login() {
     }
     setBusy(true)
     setError(null)
-    const { data, error: authError } =
-      mode === 'signin'
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password })
-    setBusy(false)
+    setNotice(null)
 
+    if (mode === 'signin') {
+      const { data, error: authError } =
+        await supabase.auth.signInWithPassword({ email, password })
+      setBusy(false)
+      if (authError) {
+        setError(
+          authError.message === 'Invalid login credentials'
+            ? 'Incorrect email or password. If you signed up earlier, use the same password — or create an account below.'
+            : authError.message,
+        )
+        return
+      }
+      if (!data.session) {
+        setError('Sign-in failed — no session returned. Please try again.')
+        return
+      }
+      loginWithToken(data.session.access_token)
+      return
+    }
+
+    // Signup
+    const { data, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+    })
+    setBusy(false)
     if (authError) {
-      setError(authError.message)
+      // Supabase reuses the same message for "already registered" and other
+      // signup failures, so map the common case to a useful next action.
+      const alreadyExists =
+        /already|registered|exists/i.test(authError.message) ||
+        authError.status === 422 ||
+        authError.status === 400
+      if (alreadyExists) {
+        setMode('signin')
+        setNotice(
+          'An account with this email already exists — sign in with your password below.',
+        )
+        setError(null)
+      } else {
+        setError(authError.message)
+      }
       return
     }
-    if (!data.session) {
-      setError('No session returned — confirm your email address first.')
+    if (data.session) {
+      // Email confirmation disabled: session returned immediately.
+      loginWithToken(data.session.access_token)
       return
     }
-    loginWithToken(data.session.access_token)
+    // Confirmation email sent — the account exists now, so switch to login.
+    setMode('signin')
+    setNotice(
+      'Account created. Check your email to confirm it, then sign in below.',
+    )
   }
 
   const handleToken = () => {
@@ -76,7 +118,9 @@ export default function Login() {
           AI Software Intelligence
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Sign in to analyze your repositories.
+          {mode === 'signin'
+            ? 'Sign in to analyze your repositories.'
+            : 'Create an account to analyze your repositories.'}
         </p>
 
         <form onSubmit={handleAuth} className="mt-6 space-y-4">
@@ -90,6 +134,7 @@ export default function Login() {
               required
               autoComplete="email"
               className="input"
+              placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
@@ -102,15 +147,24 @@ export default function Login() {
               id="password"
               type="password"
               required
+              minLength={8}
               autoComplete={
                 mode === 'signin' ? 'current-password' : 'new-password'
               }
               className="input"
+              placeholder={
+                mode === 'signin' ? 'Your password' : 'At least 8 characters'
+              }
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
 
+          {notice ? (
+            <p className="rounded-lg bg-indigo-50 px-3 py-2 text-sm text-indigo-700">
+              {notice}
+            </p>
+          ) : null}
           {error ? (
             <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
               {error}
@@ -129,18 +183,20 @@ export default function Login() {
                 : 'Create account'}
           </button>
 
-          <button
-            type="button"
-            className="w-full text-center text-sm text-indigo-600 hover:underline"
-            onClick={() => {
-              setMode(mode === 'signin' ? 'signup' : 'signin')
-              setError(null)
-            }}
-          >
-            {mode === 'signin'
-              ? 'Need an account? Sign up'
-              : 'Have an account? Sign in'}
-          </button>
+          <p className="text-center text-sm text-slate-500">
+            {mode === 'signin' ? "Don't have an account?" : 'Have an account?'}{' '}
+            <button
+              type="button"
+              className="text-indigo-600 hover:underline"
+              onClick={() => {
+                setMode(mode === 'signin' ? 'signup' : 'signin')
+                setError(null)
+                setNotice(null)
+              }}
+            >
+              {mode === 'signin' ? 'Create one' : 'Sign in'}
+            </button>
+          </p>
         </form>
 
         <div className="my-6 flex items-center gap-3">

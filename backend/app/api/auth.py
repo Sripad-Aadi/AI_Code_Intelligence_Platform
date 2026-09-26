@@ -116,21 +116,21 @@ async def github_callback(
     if not user:
         user = User(id=user_id)
 
-    # A GitHub account can only be bound to one `users` row
-    # (uq_users_github_id). If it's already bound to a different Supabase
-    # account — e.g. the same human signed up twice — unlink the old row so
-    # the current caller owns the link and the UPDATE below can't violate
-    # the unique constraint (which previously 500'd the callback).
-    previous_owner = (
+    # uq_users_github_id: one GitHub account → one app user row. If it's
+    # already bound to a different account, reject rather than silently steal.
+    existing_owner = (
         db.query(User)
         .filter(User.github_id == gh_user["id"], User.id != user_id)
         .first()
     )
-    if previous_owner is not None:
-        previous_owner.github_id = None
-        previous_owner.github_login = None
-        previous_owner.github_access_token = None
-        db.add(previous_owner)
+    if existing_owner is not None:
+        msg = (
+            "This GitHub account is already linked to a different account. "
+            "Sign in to that account, or unlink GitHub there first."
+        )
+        if is_browser:
+            return _oauth_redirect(error=msg)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=msg)
 
     user.github_id = gh_user["id"]
     user.github_login = gh_user["login"]
@@ -148,6 +148,26 @@ async def github_callback(
         "github_id": user.github_id,
         "github_login": user.github_login,
     }
+
+
+@router.delete("/github")
+async def github_unlink(
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Unlink the caller's GitHub account (frees the `github_id` for others)."""
+    user = db.get(User, current_user.id)
+    if not user or not user.github_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="GitHub is not linked to this account",
+        )
+    user.github_id = None
+    user.github_login = None
+    user.github_access_token = None
+    db.add(user)
+    db.commit()
+    return {"status": "unlinked"}
 
 
 @router.get("/github/status")

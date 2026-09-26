@@ -1,9 +1,9 @@
 /** "Link GitHub" button: opens the Step-3 OAuth flow in a popup, then polls
  *  /auth/github/status until the account shows as linked. */
 
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { getApiBase, getGithubStatus } from '../api/client'
+import { getApiBase, getGithubStatus, unlinkGithub } from '../api/client'
 import type { GithubStatus } from '../api/types'
 import { useAuth } from '../auth/context'
 
@@ -23,6 +23,14 @@ export default function LinkGithub() {
     },
   })
 
+  const unlink = useMutation({
+    mutationFn: unlinkGithub,
+    onSuccess: () => {
+      setPolling(false)
+      queryClient.invalidateQueries({ queryKey: ['github-status'] })
+    },
+  })
+
   const handleLink = () => {
     if (!token) return
     const url = `${getApiBase()}/auth/github/login?state=${encodeURIComponent(token)}`
@@ -33,8 +41,26 @@ export default function LinkGithub() {
 
   if (status?.linked) {
     return (
-      <span className="badge bg-emerald-100 text-emerald-700">
-        GitHub linked as {status.github_login}
+      <span className="flex items-center gap-2">
+        <span className="badge bg-emerald-100 text-emerald-700">
+          GitHub linked as {status.github_login}
+        </span>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={unlink.isPending}
+          onClick={() => {
+            if (
+              window.confirm(
+                `Unlink GitHub (${status.github_login}) from this account?`,
+              )
+            ) {
+              unlink.mutate()
+            }
+          }}
+        >
+          {unlink.isPending ? 'Unlinking…' : 'Unlink'}
+        </button>
       </span>
     )
   }

@@ -61,6 +61,13 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
 - PowerShell, not bash: heredocs (`cat > x << EOF`) fail; use the `write` tool.
   Inline `python -c` breaks on quotes/f-strings — write a temp `.py` file with
   the `write` tool and run it instead.
+- **Never leave servers running.** Background shells started via
+  `background: true` (`uvicorn`, `celery`, `npm run dev`) keep holding their
+  ports after the task is done, which blocks the user from starting the same
+  server. Stop the listening process before ending a task:
+  `Get-NetTCPConnection -LocalPort <port> -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`
+  (note: Vite binds `[::1]:5173`, so probe `http://localhost:5173`, not
+  `127.0.0.1`). Only leave a server up if the user asked for it.
 - `ruff format` (not black) is the formatter, even though `tool.black` exists in
   `pyproject.toml`. Alembic files are part of the lint/format gate.
 - **Frontend secrets**: `frontend/.env` (gitignored via root `.gitignore`) only
@@ -134,8 +141,13 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   caller's `users` row; **browsers get a 302 to `{FRONTEND_URL}/linked`** so
   the popup closes itself — never refreshes a code-bearing URL, which would
   replay a consumed code and trigger GitHub's `bad_verification_code`; API
-  clients keep the JSON response), `GET /auth/github/status`. `FRONTEND_URL`
-  (default `http://localhost:5173`) is a config setting.
+  clients keep the JSON response), `GET /auth/github/status`,
+  `DELETE /auth/github` (unlink — frees the `github_id`, exposed as the
+  "Unlink" button next to the linked badge in `LinkGithub.tsx`).
+  `FRONTEND_URL` (default `http://localhost:5173`) is a config setting.
+  Because `uq_users_github_id` makes a GitHub account belong to exactly one
+  user row, the callback **rejects a conflicting link with 409** (a clear
+  error in the `/linked` popup) rather than silently stealing the binding.
   `ingestion` (Step 4) dispatches repo scans to Celery and is what the frontend
   polls: `POST /repos/{id}/ingest` (202 + enqueue), `GET /jobs/{job_id}` (status),
   `GET /repos/{id}/jobs` (history). `analysis` (Step 5) surfaces the parsed

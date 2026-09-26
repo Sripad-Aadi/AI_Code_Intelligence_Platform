@@ -87,6 +87,9 @@ const jsonBody = (data: unknown): RequestInit => ({
 
 export const getGithubStatus = () => apiFetch<GithubStatus>('/auth/github/status')
 
+export const unlinkGithub = () =>
+  apiFetch<{ status: string }>('/auth/github', { method: 'DELETE' })
+
 // --- Projects (Step 2) ---
 
 export const listProjects = () => apiFetch<Project[]>('/projects')
