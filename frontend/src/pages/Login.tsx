@@ -45,60 +45,85 @@ export default function Login() {
     setError(null)
     setNotice(null)
 
-    if (mode === 'signin') {
-      const { data, error: authError } =
-        await supabase.auth.signInWithPassword({ email, password })
-      setBusy(false)
-      if (authError) {
-        setError(
-          authError.message === 'Invalid login credentials'
-            ? 'Incorrect email or password. If you signed up earlier, use the same password — or create an account below.'
-            : authError.message,
-        )
+    try {
+      if (mode === 'signin') {
+        const { data, error: authError } =
+          await supabase.auth.signInWithPassword({ email, password })
+        if (authError) {
+          setError(
+            authError.message === 'Invalid login credentials'
+              ? 'Incorrect email or password. If you signed up earlier, use the same password — or create an account below.'
+              : authError.message,
+          )
+          return
+        }
+        if (!data.session) {
+          setError('Sign-in failed — no session returned. Please try again.')
+          return
+        }
+        loginWithToken(data.session.access_token)
         return
       }
-      if (!data.session) {
-        setError('Sign-in failed — no session returned. Please try again.')
-        return
-      }
-      loginWithToken(data.session.access_token)
-      return
-    }
 
-    // Signup
-    const { data, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-    })
-    setBusy(false)
-    if (authError) {
-      // Supabase reuses the same message for "already registered" and other
-      // signup failures, so map the common case to a useful next action.
-      const alreadyExists =
-        /already|registered|exists/i.test(authError.message) ||
-        authError.status === 422 ||
-        authError.status === 400
-      if (alreadyExists) {
+      // Signup
+      const { data, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+      })
+      if (authError) {
+        // Only a genuine duplicate maps to "already exists". A blanket
+        // status check is wrong: 400 also covers email_address_invalid, and
+        // 429 is the email-send rate limit.
+        const code = (authError as { code?: string }).code ?? ''
+        const alreadyExists =
+          code === 'email_exists' ||
+          /already (been )?registered|already exists/i.test(authError.message)
+        if (alreadyExists) {
+          setMode('signin')
+          setNotice(
+            'An account with this email already exists — sign in with your password below.',
+          )
+        } else {
+          setError(authError.message)
+        }
+        return
+      }
+      if (data.session) {
+        // Email confirmation disabled: session returned immediately.
+        loginWithToken(data.session.access_token)
+        return
+      }
+
+      // No error *and* no session is ambiguous: Supabase is enumeration-safe
+      // and answers an already-registered email with HTTP 200 + a null user,
+      // which looks just like a new account awaiting confirmation. Verified
+      // against this project: an existing email returns user === null and
+      // sends no mail, while a new signup returns the created user.
+      const looksExisting = data.user == null
+
+      const probe = await supabase.auth.signInWithPassword({ email, password })
+      if (probe.data.session) {
+        // The account already existed and the password matches — just log in.
+        setNotice('That account already exists — signed you in.')
+        loginWithToken(probe.data.session.access_token)
+        return
+      }
+      if (/not confirmed/i.test(probe.error?.message ?? '')) {
         setMode('signin')
         setNotice(
-          'An account with this email already exists — sign in with your password below.',
+          'That account already exists but is not confirmed yet. Check your email to confirm it, then sign in.',
         )
-        setError(null)
-      } else {
-        setError(authError.message)
+        return
       }
-      return
+      setMode('signin')
+      setNotice(
+        looksExisting
+          ? 'An account with this email already exists — sign in with your password below.'
+          : 'Account created. Check your email to confirm it, then sign in below.',
+      )
+    } finally {
+      setBusy(false)
     }
-    if (data.session) {
-      // Email confirmation disabled: session returned immediately.
-      loginWithToken(data.session.access_token)
-      return
-    }
-    // Confirmation email sent — the account exists now, so switch to login.
-    setMode('signin')
-    setNotice(
-      'Account created. Check your email to confirm it, then sign in below.',
-    )
   }
 
   const handleToken = () => {

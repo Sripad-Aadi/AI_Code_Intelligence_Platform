@@ -128,6 +128,18 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   JWKS entry that has `crv`/`x`/`y`, no RSA `n`/`e`. `decode_supabase_token`
   passes the raw JWK dict to `jose` (works for both RS256 and ES256), selected
   by the token's `alg` header. Never "fix" this back to a hardcoded RSA build.
+- **Signup is enumeration-safe** (verified against this project, not from docs):
+  signing up an already-registered email returns **HTTP 200, `session: null`,
+  `user: null`** and sends no mail — indistinguishable from a brand-new
+  account awaiting confirmation. Only `user === null` distinguishes them (a
+  real signup returns the created user). `Login.tsx` therefore probes with
+  `signInWithPassword` after a session-less signup: it signs the user in when
+  the password matches, reports "not confirmed" for an unconfirmed existing
+  account, and otherwise falls back on the `user == null` signal. Do **not**
+  key off `status === 400`: 400 is also `email_address_invalid` (Supabase
+  rejects `@example.com` as a reserved domain), and 429 is
+  `over_email_send_rate_limit` (hitting the confirm-email rate limit on a
+  free-tier project).
 - The dashboard's **Project URL** is the bare domain (`https://<ref>.supabase.co`);
   the **REST API URL** adds `/rest/v1`. `SUPABASE_URL` must be the bare Project
   URL — the app builds the JWKS URL as `{SUPABASE_URL}/auth/v1/...`.
