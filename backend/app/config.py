@@ -14,6 +14,13 @@ class Settings(BaseSettings):
     # Redis / Upstash (Celery broker)
     REDIS_URL: str = Field(..., description="Upstash Redis REST URL")
     UPSTASH_TOKEN: str = Field(..., description="Upstash Redis token")
+    CELERY_BROKER_URL: Optional[str] = Field(
+        default=None,
+        description=(
+            "Redis URL for the Celery broker. Optional — when unset, the "
+            "worker derives rediss:// from REDIS_URL + UPSTASH_TOKEN."
+        ),
+    )
 
     # Supabase Auth
     SUPABASE_URL: str = Field(..., description="Supabase project URL")

@@ -3,12 +3,16 @@
 FastAPI backend + React (Vite) frontend, no Docker. Development is driven by the
 19-step plan in `AI_Software_Engineering_Intelligence_Platform_Implementation_Plan_v2.docx`,
 executed in strict Step 1→19 order with an acceptance gate after each step.
-Steps 1–3 are committed: Step 2 (Supabase auth + projects + repo CRUD) and Step 3
-(GitHub OAuth + shallow clone). Step 3's end-to-end proof (OAuth → list repos →
-shallow clone) was verified on 2026-09-26: a dev user linked GitHub (`Sripad-Aadi`),
-listed 18 repos, attached + shallow-cloned `Sripad-Aadi/AI_Code_Intelligence_Platform`
-into `backend/.clones/` (via the API, not the test harness). The frontend is still
-untouched Vite boilerplate (Step 6).
+Steps 1–4 are committed: Step 2 (Supabase auth + projects + repo CRUD), Step 3
+(GitHub OAuth + shallow clone), and Step 4 (repo ingestion via Celery). Step 3's
+end-to-end proof (OAuth → list repos → shallow clone) was verified on 2026-09-26:
+a dev user linked GitHub (`Sripad-Aadi`), listed 18 repos, attached +
+shallow-cloned `Sripad-Aadi/AI_Code_Intelligence_Platform` into `backend/.clones/`
+(via the API, not the test harness). Step 4's proof ran the same day: a Celery
+worker (Upstash Redis broker) executed `ingestion.ingest_repo` on that clone —
+filters + language detection → 132 files scanned / 99 indexed, with a language
+histogram stored on the `analysis_jobs` row and pollable via `GET /jobs/{id}`.
+The frontend is still untouched Vite boilerplate (Step 6).
 
 ## Hard rule: `.env` is off-limits
 
@@ -22,10 +26,11 @@ untouched Vite boilerplate (Step 6).
 
 ```powershell
 cd backend
-venv\Scripts\python -m pytest                        # tests (currently 3 smoke-only)
+venv\Scripts\python -m pytest                        # tests (9: 3 smoke + 6 ingestion)
 venv\Scripts\python -m ruff check app tests alembic  # lint: E/W/F/I, line 88
 venv\Scripts\python -m ruff format --check app tests alembic
 venv\Scripts\uvicorn app.main:app --reload           # API on :8000
+venv\Scripts\celery -A app.worker worker --pool=solo --loglevel=info  # Step 4 worker (2nd terminal)
 venv\Scripts\alembic revision --autogenerate -m "msg"
 venv\Scripts\alembic upgrade head
 venv\Scripts\alembic current
@@ -39,10 +44,14 @@ venv\Scripts\alembic current
 
 ## Dependency and config gotchas (verified)
 
-- **`backend/requirements.txt` is stale**: `app/config.py` imports
-  `pydantic-settings` and `app/core/security.py` imports `httpx`, but neither is
-  pinned. `httpx` is not even installed in the venv yet, so
-  `uvicorn app.main:app` fails on import until it is installed and pinned.
+- **Celery broker on Windows/Upstash**: the worker needs `--pool=solo` (Windows
+  has no `os.fork`; the default prefork pool refuses to start). The broker URL
+  is resolved without reading `.env`: explicit `CELERY_BROKER_URL` → `REDIS_URL`
+  if already redis(s):// → derived `rediss://default:<UPSTASH_TOKEN>@<rest-host>:6379`
+  (Upstash REST and Redis share host + token). redis-py refuses `rediss://`
+  URLs without `ssl_cert_reqs`, so `app/worker.py` appends
+  `?ssl_cert_reqs=CERT_NONE`. The API enqueues with `.delay()`; if the broker
+  is unreachable, `POST /repos/{id}/ingest` returns 503 (job marked failed).
 - `app/config.py` requires `DATABASE_URL`, `REDIS_URL`, `UPSTASH_TOKEN`,
   `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `GITHUB_CLIENT_ID`,
   `GITHUB_CLIENT_SECRET` — importing `app.config` raises a pydantic
@@ -55,17 +64,11 @@ venv\Scripts\alembic current
   ConfigParser interpolation rejects the `%40` (URL-encoded `@`) in the
   password. Never "fix" the URL in `.env` — the escaping belongs in env.py
   (already done).
-- **Autogenerate currently yields empty migrations**: env.py sets
-  `target_metadata = Base.metadata` but never imports the model modules, so the
-  metadata is empty at load time. `app/models/__init__.py` exports
-  `User`/`Project`/`ProjectRepository` but nothing imports it. Add
-  `import app.models` (or the model modules) in env.py before generating a real
-  migration; the existing migration was generated empty (`pass` bodies).
-- DB is stamped `b73895e1740e`, but that stub migration's file was deleted from
-  `backend/alembic/versions/`, so alembic fails with "Can't locate revision
-  identified by 'b73895e1740e'". The `users` / `projects` /
-  `project_repositories` tables were **not** created by it — verify the Supabase
-  schema and reconcile `alembic_version` before the next migration.
+- Autogenerate works: `alembic/env.py` imports `app.models`, so `Base.metadata`
+  is populated and real migrations are produced (verified while generating the
+  `analysis_jobs` table). Applied head: `79b4d93cb86f` (add analysis_jobs),
+  previous: `12097b55786a` (users GitHub columns). `alembic current` =
+  `79b4d93cb86f (head)`.
 
 ## Supabase free-tier quirks
 
@@ -84,13 +87,17 @@ venv\Scripts\alembic current
 
 ## Structure
 
-- Mounted routers: `auth`, `projects`, `repos` (`app/main.py`). `auth` now has
-  the real GitHub OAuth flow (Step 3): `GET /auth/github/login?state=<supabase-jwt>`
+- Mounted routers: `auth`, `projects`, `repos`, `ingestion` (`app/main.py`).
+  `auth` has the real GitHub OAuth flow (Step 3): `GET /auth/github/login?state=<supabase-jwt>`
   (307 → GitHub), `GET /auth/github/callback` (exchanges code, stores the GitHub
   token on the caller's `users` row), `GET /auth/github/status`.
-  `ingestion`, `chat`, `findings`, `search`, `pull_requests`, `webhooks` are
-  placeholder stubs for later steps and are commented out.
-- Auth is Supabase JWT (RS256 via JWKS), decoded in `app/core/security.py`, which
+  `ingestion` (Step 4) dispatches repo scans to Celery and is what the frontend
+  polls: `POST /repos/{id}/ingest` (202 + enqueue), `GET /jobs/{job_id}` (status),
+  `GET /repos/{id}/jobs` (history). `chat`, `findings`, `search`,
+  `pull_requests`, `webhooks` are placeholder stubs for later steps and remain
+  commented out in `app/main.py`.
+- Auth is Supabase JWT (RS256 **or ES256** via JWKS — this project's key is
+  ES256/EC), decoded in `app/core/security.py`, which
   upserts a local shadow `users` row on first authenticated request — auth
   endpoints need the `users` table to exist.
 - GitHub OAuth binds the token to the Supabase user via the OAuth `state` param,
@@ -102,6 +109,13 @@ venv\Scripts\alembic current
   URL) into `CLONE_ROOT_DIR` (default `./.clones`, gitignored), and records
   owner/name/default_branch/last_indexed_at. GitHub API helpers live in
   `app/services/github.py`, the clone in `app/ingestion/clone.py`.
+- Step 4 ingestion: `app/ingestion/filters.py` (skip `node_modules`/`.git`/
+  `dist`/`build`/`vendor`/`__pycache__`, lockfiles, binary+media, minified
+  bundles, `.env`), `app/ingestion/language_detect.py` (extension → language),
+  `app/worker.py` (Celery app), `app/tasks/inject_repo.py` (`ingestion.ingest_repo`
+  task — walks the clone, updates the `analysis_jobs` row). `analysis_jobs`
+  columns: id, repo_id, status, started_at, finished_at, error, files_scanned,
+  files_indexed, languages (JSON histogram), created_at.
 - Frontend `src/pages/*`, `src/api/client.ts`, `src/hooks/useJobStatus.ts` are
   empty; react-router, react-query, and tailwind are not installed (needed at
   Step 6).
