@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
+import { Navigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 import { usePageTitle } from '../hooks/usePageTitle'
-import { supabase, supabaseConfigured } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 
 type Mode = 'signin' | 'signup'
 
 export default function Login() {
   const { isAuthed, loginWithToken } = useAuth()
-  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
 
   usePageTitle('Sign in')
@@ -17,12 +16,13 @@ export default function Login() {
   const [mode, setMode] = useState<Mode>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [tokenInput, setTokenInput] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  // One-shot: accept ?token=<supabase-jwt> from a URL (useful for demos).
+  // One-shot: accept ?token=<supabase-jwt> from a URL. Undocumented in the UI
+  // on purpose (email/password is the only way in for a human) but kept for
+  // scripted/E2E sign-in, where minting a JWT is easier than typing a password.
   useEffect(() => {
     const t = params.get('token')
     if (!t) return
@@ -37,7 +37,7 @@ export default function Login() {
     e.preventDefault()
     if (!supabase) {
       setError(
-        'Supabase is not configured (set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in frontend/.env). Paste an access token below instead.',
+        'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in frontend/.env and restart the dev server.',
       )
       return
     }
@@ -124,16 +124,6 @@ export default function Login() {
     } finally {
       setBusy(false)
     }
-  }
-
-  const handleToken = () => {
-    const t = tokenInput.trim()
-    if (!t) {
-      setError('Paste an access token first.')
-      return
-    }
-    loginWithToken(t)
-    if (supabaseConfigured) navigate('/', { replace: true })
   }
 
   return (
@@ -223,37 +213,6 @@ export default function Login() {
             </button>
           </p>
         </form>
-
-        <div className="my-6 flex items-center gap-3">
-          <div className="h-px flex-1 bg-slate-200" />
-          <span className="text-xs uppercase tracking-wide text-slate-400">
-            or use an access token
-          </span>
-          <div className="h-px flex-1 bg-slate-200" />
-        </div>
-
-        <div className="space-y-2">
-          <textarea
-            className="input min-h-20 font-mono text-xs"
-            placeholder="Paste a Supabase access token (JWT)…"
-            value={tokenInput}
-            onChange={(e) => setTokenInput(e.target.value)}
-          />
-          <button
-            type="button"
-            className="btn btn-outline w-full justify-center"
-            onClick={handleToken}
-          >
-            Continue with token
-          </button>
-          <p className="text-xs text-slate-400">
-            Tip: you can also open the app as{' '}
-            <code className="rounded bg-slate-100 px-1">
-              /login?token=&lt;jwt&gt;
-            </code>{' '}
-            to sign in in one step.
-          </p>
-        </div>
       </div>
     </div>
   )

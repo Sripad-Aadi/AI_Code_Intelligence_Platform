@@ -73,9 +73,11 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
 - **Frontend secrets**: `frontend/.env` (gitignored via root `.gitignore`) only
   holds public values — `VITE_API_BASE`, `VITE_SUPABASE_URL`,
   `VITE_SUPABASE_ANON_KEY`. The JWT lives in `localStorage`
-  (`ai_sip_access_token`), same as the test-harness approach. With empty
-  Supabase vars the Login page falls back to pasting a Supabase access token
-  (or `/login?token=<jwt>`), which is enough for the whole app to work.
+  (`ai_sip_access_token`), same as the test-harness approach. Sign-in is
+  Supabase email/password only — the paste-a-token box is gone, because
+  `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` are always configured. The
+  non-UI `/login?token=<jwt>` deep link still works and is what scripted/E2E
+  sign-in uses (minting a JWT beats typing a password).
 
 ## Dependency and config gotchas (verified)
 
@@ -179,10 +181,10 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   `useAuth` (context kept in `context.ts` because react-refresh forbids
   non-component exports from `.tsx`). `src/hooks/useJobStatus.ts` polls
   `GET /jobs/{id}` every 2 s with TanStack Query, stopping at
-  completed/failed. Pages: `Login` (supabase-js email/password + token-paste
-  fallback, consumed once via `?token=`), `Dashboard` (projects CRUD + GitHub
-  link popup via `components/LinkGithub.tsx`), `ProjectDetail` (attach repo
-  from `GET /user/repos`, analyze → navigate to `/jobs/:id?repo=`),
+  completed/failed. Pages: `Login` (supabase-js email/password only, plus a
+  UI-less `?token=` deep link for scripted sign-in), `Dashboard` (projects
+  CRUD + GitHub link popup via `components/LinkGithub.tsx`), `ProjectDetail`
+  (attach repo from `GET /user/repos`, analyze → navigate to `/jobs/:id?repo=`),
   `AnalysisStatus` (live poll + counts + language histogram + history),
   `RepoExplorer` (file tree built client-side from flat paths, symbol table
   with kind filters, imports/belongs_to edge tables, file-detail pane with

@@ -23,9 +23,8 @@ Copy `.env.example` to `.env` and fill in:
 | `VITE_SUPABASE_ANON_KEY` | Supabase publishable key — enables email/password sign-in    |
 
 Everything is embedded in the browser bundle, so only public values belong
-here. If the Supabase vars are empty, the login page falls back to pasting a
-Supabase access token JWT (full flow works this way too — the backend only
-ever sees the JWT).
+here. Both Supabase vars are required — without them the login form has no way
+to authenticate and says so.
 
 ## Pages
 
@@ -45,9 +44,10 @@ ever sees the JWT).
 ## Auth notes
 
 The backend authenticates Supabase JWTs (`Authorization: Bearer <jwt>`).
-This app stores the JWT in `localStorage` (`ai_sip_access_token`), which is
-the same approach the existing test harness uses. A 401/403 clears it and
-redirects to `/login`. You can sign in in one step via
+This app stores the JWT in `localStorage` (`ai_sip_access_token`), which is the
+same approach the existing test harness uses. A 401/403 clears it and
+redirects to `/login`. Sign-in is Supabase email/password only; there is no
+paste-a-token box. For scripted/E2E sign-in there is a UI-less deep link:
 `http://localhost:5173/login?token=<jwt>`.
 
 Each page sets its own browser-tab title (`src/hooks/usePageTitle.ts` or the
