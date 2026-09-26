@@ -116,12 +116,15 @@ async def github_callback(
     if not user:
         user = User(id=user_id)
 
+    # GitHub returns a numeric id, but users.github_id is a varchar column —
+    # compare/assign as str or Postgres raises
+    # "operator does not exist: character varying = integer".
+    github_id = str(gh_user["id"])
+
     # uq_users_github_id: one GitHub account → one app user row. If it's
     # already bound to a different account, reject rather than silently steal.
     existing_owner = (
-        db.query(User)
-        .filter(User.github_id == gh_user["id"], User.id != user_id)
-        .first()
+        db.query(User).filter(User.github_id == github_id, User.id != user_id).first()
     )
     if existing_owner is not None:
         msg = (
@@ -132,7 +135,7 @@ async def github_callback(
             return _oauth_redirect(error=msg)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=msg)
 
-    user.github_id = gh_user["id"]
+    user.github_id = github_id
     user.github_login = gh_user["login"]
     user.github_access_token = token_data["access_token"]
     db.add(user)

@@ -148,6 +148,10 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   Because `uq_users_github_id` makes a GitHub account belong to exactly one
   user row, the callback **rejects a conflicting link with 409** (a clear
   error in the `/linked` popup) rather than silently stealing the binding.
+  **Type gotcha**: `users.github_id` is `String(100)` but GitHub returns a
+  *numeric* id, so the conflict check and assignment must coerce with
+  `str(gh_user["id"])` — comparing the varchar column to an int makes Postgres
+  raise `operator does not exist: character varying = integer` (HTTP 500).
   `ingestion` (Step 4) dispatches repo scans to Celery and is what the frontend
   polls: `POST /repos/{id}/ingest` (202 + enqueue), `GET /jobs/{job_id}` (status),
   `GET /repos/{id}/jobs` (history). `analysis` (Step 5) surfaces the parsed
