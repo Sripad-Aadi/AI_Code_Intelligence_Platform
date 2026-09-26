@@ -69,27 +69,16 @@ async def decode_supabase_token(token: str) -> TokenPayload:
         if not key:
             raise JWTError(f"Key '{kid}' not found in JWKS")
 
-    # jose expects an RSA public key in PEM format; construct from JWK
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from jose.utils import base64url_decode
-
-    n = base64url_decode(key["n"].encode())
-    e = base64url_decode(key["e"].encode())
-    public_numbers = rsa.RSAPublicNumbers(
-        int.from_bytes(e, "big"),
-        int.from_bytes(n, "big"),
-    )
-    public_key = public_numbers.public_key()
-    pem = public_key.public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo,
-    )
+    # Supabase can sign with either RS256 (RSA JWKs) or ES256 (EC JWKs).
+    # python-jose can build the key directly from the JWK dict for both.
+    alg = unverified_header.get("alg")
+    if alg not in ("RS256", "ES256"):
+        raise JWTError(f"Unsupported token algorithm '{alg}'")
 
     payload = jwt.decode(
         token,
-        pem,
-        algorithms=["RS256"],
+        key,
+        algorithms=[alg],
         audience="authenticated",
         options={"verify_aud": True},
     )

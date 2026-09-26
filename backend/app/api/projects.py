@@ -8,7 +8,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, selectinload
 
-from app.config import settings
 from app.core.security import CurrentUser, get_current_user, require_project_owner
 from app.db.session import get_db
 from app.models.project import Project
@@ -170,15 +169,12 @@ def attach_repository(
     db.refresh(repo_row)
 
     # 3. Shallow clone to server disk (depth=1). Use the token in the URL so
-    #    private repos work too.
+    #    private repos work too. `dest` is relative to CLONE_ROOT_DIR (the
+    #    clone helper prepends the configured root).
     clone_url = repo["clone_url"].replace(
         "https://", f"https://x-access-token:{user_row.github_access_token}@"
     )
-    dest = (
-        Path(settings.CLONE_ROOT_DIR)
-        / str(project_id)
-        / repo["full_name"].replace("/", "__")
-    )
+    dest = Path(str(project_id)) / repo["full_name"].replace("/", "__")
     try:
         clone_shallow(clone_url, dest)
     except Exception as e:

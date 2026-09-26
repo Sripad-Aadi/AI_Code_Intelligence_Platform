@@ -13,10 +13,12 @@ from app.config import settings
 
 
 def clone_shallow(repo_url: str, dest: Path) -> Path:
-    """Shallow-clone a repo (https URL) into `dest`, replacing prior contents.
+    """Shallow-clone a repo (https URL) into `CLONE_ROOT_DIR/dest`, replacing
+    prior contents.
 
-    Returns the clone root. Raises subprocess.CalledProcessError on failure
-    (e.g. bad URL, network, or insufficient permissions).
+    `dest` is a path *relative to* the configured clone root (the helper
+    prepends it). Returns the clone root. Raises subprocess.CalledProcessError
+    on failure (e.g. bad URL, network, or insufficient permissions).
     """
     clone_root = Path(settings.CLONE_ROOT_DIR)
     target = clone_root / dest

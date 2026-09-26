@@ -5,8 +5,9 @@ FastAPI backend + React (Vite) frontend, no Docker. Development is driven by the
 executed in strict Step 1→19 order with an acceptance gate after each step.
 Steps 1–3 are committed: Step 2 (Supabase auth + projects + repo CRUD) and Step 3
 (GitHub OAuth + shallow clone). Step 3's end-to-end proof (OAuth → list repos →
-shallow clone) is still pending because the app cannot boot: `backend/.env` is
-missing `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`. The frontend is still
+shallow clone) was verified on 2026-09-26: a dev user linked GitHub (`Sripad-Aadi`),
+listed 18 repos, attached + shallow-cloned `Sripad-Aadi/AI_Code_Intelligence_Platform`
+into `backend/.clones/` (via the API, not the test harness). The frontend is still
 untouched Vite boilerplate (Step 6).
 
 ## Hard rule: `.env` is off-limits
@@ -73,6 +74,13 @@ venv\Scripts\alembic current
 - The transaction-pooler host (`aws-0-<region>.pooler.supabase.com:6543`)
   requires the project ref in the username (`postgres.<project-ref>@...`),
   otherwise `FATAL: (ENOIDENTIFIER) no tenant identifier provided`.
+- **JWT signing is ES256 (EC keys), not RS256** — `users` JWTs verify with a
+  JWKS entry that has `crv`/`x`/`y`, no RSA `n`/`e`. `decode_supabase_token`
+  passes the raw JWK dict to `jose` (works for both RS256 and ES256), selected
+  by the token's `alg` header. Never "fix" this back to a hardcoded RSA build.
+- The dashboard's **Project URL** is the bare domain (`https://<ref>.supabase.co`);
+  the **REST API URL** adds `/rest/v1`. `SUPABASE_URL` must be the bare Project
+  URL — the app builds the JWKS URL as `{SUPABASE_URL}/auth/v1/...`.
 
 ## Structure
 
