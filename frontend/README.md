@@ -31,6 +31,10 @@ ever sees the JWT).
 
 - `/` — **Dashboard**: project list, create/delete projects, link GitHub
   (`GET /auth/github/status` + OAuth popup).
+- `/linked` — **OAuth completion**: the GitHub callback 302s the popup here
+  (`?login=` or `?error=`); the page auto-closes. Because the callback never
+  leaves the browser on a code-bearing URL, refreshing/retrying can't replay
+  an already-consumed GitHub `code` (`bad_verification_code`).
 - `/projects/:projectId` — **Project detail**: attach GitHub repos
   (shallow clone), trigger analysis (`POST /repos/{id}/ingest`).
 - `/jobs/:jobId` — **Analysis status**: polls `GET /jobs/{id}` every 2 s via
@@ -45,3 +49,8 @@ This app stores the JWT in `localStorage` (`ai_sip_access_token`), which is
 the same approach the existing test harness uses. A 401/403 clears it and
 redirects to `/login`. You can sign in in one step via
 `http://localhost:5173/login?token=<jwt>`.
+
+Each page sets its own browser-tab title (`src/hooks/usePageTitle.ts` or the
+static `<title>` in `index.html`), so the tab never duplicates the
+"AI Software Intelligence" brand that already sits in the navbar / login
+card.

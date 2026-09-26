@@ -131,7 +131,11 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   (`app/main.py`). `auth` has the real GitHub OAuth flow (Step 3):
   `GET /auth/github/login?state=<supabase-jwt>` (307 → GitHub),
   `GET /auth/github/callback` (exchanges code, stores the GitHub token on the
-  caller's `users` row), `GET /auth/github/status`.
+  caller's `users` row; **browsers get a 302 to `{FRONTEND_URL}/linked`** so
+  the popup closes itself — never refreshes a code-bearing URL, which would
+  replay a consumed code and trigger GitHub's `bad_verification_code`; API
+  clients keep the JSON response), `GET /auth/github/status`. `FRONTEND_URL`
+  (default `http://localhost:5173`) is a config setting.
   `ingestion` (Step 4) dispatches repo scans to Celery and is what the frontend
   polls: `POST /repos/{id}/ingest` (202 + enqueue), `GET /jobs/{job_id}` (status),
   `GET /repos/{id}/jobs` (history). `analysis` (Step 5) surfaces the parsed

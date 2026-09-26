@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { listRepoJobs } from '../api/client'
+import { usePageTitle } from '../hooks/usePageTitle'
 import {
   isJobRunning,
   statusStyle,
@@ -30,6 +31,8 @@ export default function AnalysisStatus() {
   const { jobId } = useParams()
   const [params] = useSearchParams()
   const repoId = params.get('repo')
+
+  usePageTitle('Analysis status')
 
   const job = useJobStatus(jobId)
   const history = useQuery({

@@ -4,12 +4,15 @@ import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { createProject, deleteProject, listProjects } from '../api/client'
 import LinkGithub from '../components/LinkGithub'
+import { usePageTitle } from '../hooks/usePageTitle'
 
 export default function Dashboard() {
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [createError, setCreateError] = useState<string | null>(null)
+
+  usePageTitle('Projects')
 
   const projects = useQuery({
     queryKey: ['projects'],

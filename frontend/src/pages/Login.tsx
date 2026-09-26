@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/context'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { supabase, supabaseConfigured } from '../lib/supabase'
 
 type Mode = 'signin' | 'signup'
@@ -10,6 +11,8 @@ export default function Login() {
   const { isAuthed, loginWithToken } = useAuth()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
+
+  usePageTitle('Sign in')
 
   const [mode, setMode] = useState<Mode>('signin')
   const [email, setEmail] = useState('')

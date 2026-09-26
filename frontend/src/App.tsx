@@ -5,6 +5,7 @@ import { useAuth } from './auth/context'
 import AppShell from './components/AppShell'
 import AnalysisStatus from './pages/AnalysisStatus'
 import Dashboard from './pages/Dashboard'
+import Linked from './pages/Linked'
 import Login from './pages/Login'
 import ProjectDetail from './pages/ProjectDetail'
 import RepoExplorer from './pages/RepoExplorer'
@@ -22,6 +23,7 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/linked" element={<Linked />} />
           <Route element={<RequireAuth />}>
             <Route path="/" element={<AppShell />}>
               <Route index element={<Dashboard />} />

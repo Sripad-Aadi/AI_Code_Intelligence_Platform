@@ -10,6 +10,7 @@ import {
   startIngestion,
 } from '../api/client'
 import type { ProjectRepository } from '../api/types'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { isJobRunning, statusStyle } from '../hooks/useJobStatus'
 
 function RepoRow({ repo }: { repo: ProjectRepository }) {
@@ -116,6 +117,8 @@ export default function ProjectDetail() {
     queryFn: () => getProject(projectId as string),
     enabled: Boolean(projectId),
   })
+
+  usePageTitle(project.data?.name ?? 'Project')
 
   const ghRepos = useQuery({
     queryKey: ['github-repos'],

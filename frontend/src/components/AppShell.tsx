@@ -43,10 +43,6 @@ export default function AppShell() {
               <span className="badge bg-emerald-100 text-emerald-700">
                 GitHub: {gh.github_login}
               </span>
-            ) : gh ? (
-              <span className="badge bg-amber-100 text-amber-700">
-                GitHub not linked
-              </span>
             ) : null}
             <span className="hidden text-slate-500 sm:inline">{email}</span>
             <button

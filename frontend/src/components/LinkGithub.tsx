@@ -4,6 +4,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { getApiBase, getGithubStatus } from '../api/client'
+import type { GithubStatus } from '../api/types'
 import { useAuth } from '../auth/context'
 
 export default function LinkGithub() {
@@ -14,7 +15,12 @@ export default function LinkGithub() {
   const { data: status } = useQuery({
     queryKey: ['github-status'],
     queryFn: getGithubStatus,
-    refetchInterval: polling ? 1500 : false,
+    // Poll while the OAuth flow runs, and stop as soon as status flips to
+    // linked (function form reads the query's own state — no setState needed).
+    refetchInterval: (query) => {
+      const current = query.state.data as GithubStatus | undefined
+      return polling && !current?.linked ? 1500 : false
+    },
   })
 
   const handleLink = () => {
@@ -22,11 +28,8 @@ export default function LinkGithub() {
     const url = `${getApiBase()}/auth/github/login?state=${encodeURIComponent(token)}`
     window.open(url, '_blank', 'noopener,noreferrer,width=900,height=700')
     setPolling(true)
-    // Stop polling once the OAuth tab completes and the status flips.
     queryClient.invalidateQueries({ queryKey: ['github-status'] })
   }
-
-  const cancelPolling = () => setPolling(false)
 
   if (status?.linked) {
     return (
@@ -42,24 +45,15 @@ export default function LinkGithub() {
         Link GitHub
       </button>
       {polling ? (
-        <button
-          type="button"
-          className="btn btn-ghost"
-          onClick={cancelPolling}
-        >
-          Cancel
-        </button>
-      ) : null}
-      {status && !status.linked ? (
-        <span className="text-xs text-slate-500">
-          Not linked yet — completing the GitHub OAuth flow in the new tab
-          stores your access token for repo attachment.
-        </span>
-      ) : null}
-      {polling ? (
-        <span className="animate-pulse text-xs text-indigo-600">
-          Waiting for GitHub auth to complete…
-        </span>
+        <>
+          <span className="animate-pulse text-xs text-indigo-600">
+            Waiting for you to authorize GitHub — it will pick this up
+            automatically.
+          </span>
+          <button type="button" className="btn btn-ghost" onClick={() => setPolling(false)}>
+            Cancel
+          </button>
+        </>
       ) : null}
     </div>
   )

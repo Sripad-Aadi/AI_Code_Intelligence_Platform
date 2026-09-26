@@ -37,6 +37,13 @@ class Settings(BaseSettings):
         default="repo", description="GitHub OAuth scope(s) — repo = list + clone"
     )
 
+    # Frontend origin — the GitHub OAuth callback redirects browsers here so
+    # the popup never sits on a code-bearing URL (Step 6)
+    FRONTEND_URL: str = Field(
+        default="http://localhost:5173",
+        description="Frontend origin the GitHub OAuth callback redirects to",
+    )
+
     # Where shallow clones land on the server's own disk (Step 3)
     CLONE_ROOT_DIR: str = Field(
         default="./.clones", description="Dir for shallow git clones of repos"

@@ -12,6 +12,7 @@ import {
   startIngestion,
 } from '../api/client'
 import type { SourceFile, SymbolKind, FileWithSymbols } from '../api/types'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { isJobRunning, statusStyle } from '../hooks/useJobStatus'
 
 type Tab = 'files' | 'symbols' | 'imports'
@@ -156,6 +157,8 @@ export default function RepoExplorer() {
   })
 
   const repoMeta = attached.data?.find((r) => r.id === repoId)
+
+  usePageTitle(repoMeta?.github_full_name ?? 'Repository explorer')
   const tree = useMemo(
     () => (files.data ? buildTree(files.data) : null),
     [files.data],
