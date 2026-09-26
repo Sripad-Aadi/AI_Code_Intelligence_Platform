@@ -19,7 +19,6 @@ class User(Base):
     """
 
     __tablename__ = "users"
-    __table_args__ = {"schema": "public"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
     created_at = Column(

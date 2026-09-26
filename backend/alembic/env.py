@@ -2,6 +2,8 @@ import os
 import sys
 from logging.config import fileConfig
 
+# Import models so Base.metadata is populated for autogenerate
+import app.models  # noqa: E402, F401
 from alembic import context
 from app.db.base import Base
 from dotenv import load_dotenv
