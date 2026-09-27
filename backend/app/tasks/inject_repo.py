@@ -1,23 +1,34 @@
 """Celery task: ingest one cloned repository.
 
-Steps 4 + 5 in one pass:
+Steps 4 + 5 + 7 in one pass:
   1. Walk the clone, apply Step-4 filters, tally languages (histogram).
   2. Parse each survived file with tree-sitter (Step 5) and persist:
      files, symbols, imports, edges (file→file imports, symbol→file).
-  3. Update the analysis_jobs row so the polling endpoint shows progress.
+  3. Chunk each file (Step 7) from those exact symbol spans, embed the
+     chunks on CPU, and persist code_embeddings rows.
+  4. Update the analysis_jobs row so the polling endpoint shows progress.
+
+The structural pass is committed *before* the embedding pass: the embedding
+model is a ~1.5GB download, and losing a completed structural index because
+that download failed would be a bad trade. An embedding failure downgrades
+to a warning on the job instead (see `_embed_chunks`).
 """
 
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
+from typing import Dict, List, Optional, Tuple
 
 from app.analysis.parsers import parse_source
 from app.analysis.resolve import resolve_import
 from app.config import settings
 from app.db.session import db_session
+from app.embeddings.chunker import Chunk, chunk_file, contextualize
 from app.ingestion.filters import iter_source_files
 from app.ingestion.language_detect import detect_language
+from app.models.code_embedding import EMBEDDING_DIM, CodeEmbedding
 from app.models.edge import CodeEdge
 from app.models.file import SourceFile
 from app.models.import_stmt import ImportStatement
@@ -25,6 +36,12 @@ from app.models.job import JOB_COMPLETED, JOB_FAILED, JOB_RUNNING, AnalysisJob
 from app.models.repository import ProjectRepository
 from app.models.symbol import Symbol
 from app.worker import celery_app
+
+# Chunks embedded and INSERTed per round trip. Bounds peak memory (each row
+# carries a 768-float vector) and gives the worker incremental progress.
+EMBED_BATCH_ROWS = 200
+
+log = logging.getLogger(__name__)
 
 
 def _clone_dir(repo: ProjectRepository) -> Path:
@@ -37,16 +54,80 @@ def _clone_dir(repo: ProjectRepository) -> Path:
 
 
 def _replace_repo_analysis(db, repo_id) -> None:
-    """Drop prior files/symbols/imports/edges for a repo (fresh re-index)."""
-    for model in (CodeEdge, ImportStatement, Symbol, SourceFile):
+    """Drop prior files/symbols/imports/edges/embeddings (fresh re-index)."""
+    for model in (CodeEdge, ImportStatement, Symbol, CodeEmbedding, SourceFile):
         db.query(model).filter(model.repo_id == repo_id).delete(
             synchronize_session=False
         )
 
 
+def _embed_chunks(
+    db,
+    *,
+    repo_id,
+    chunks: List[Chunk],
+    file_ids_by_path: Dict[str, uuid.UUID],
+) -> Tuple[int, Optional[str]]:
+    """Embed chunks and insert them in batches.
+
+    Returns `(rows_inserted, warning)`. Deliberately never raises: the
+    structural index is already committed at this point, so a model that
+    cannot load/downloaded-out-of-band must not fail the whole job.
+    """
+    if not chunks:
+        return 0, None
+
+    try:
+        from app.embeddings.jina import embed_passages
+
+        inserted = 0
+        for start in range(0, len(chunks), EMBED_BATCH_ROWS):
+            batch = chunks[start : start + EMBED_BATCH_ROWS]
+            vectors = embed_passages([contextualize(chunk) for chunk in batch])
+
+            if len(vectors) != len(batch):
+                raise RuntimeError(
+                    f"model returned {len(vectors)} vectors for {len(batch)} chunks"
+                )
+            wrong_dim = next((len(v) for v in vectors if len(v) != EMBEDDING_DIM), None)
+            if wrong_dim is not None:
+                raise RuntimeError(
+                    f"model produced {wrong_dim}-d vectors but the column is "
+                    f"vector({EMBEDDING_DIM}); change EMBEDDING_DIM in "
+                    f"app/models/code_embedding.py and re-run the migration"
+                )
+
+            rows = [
+                CodeEmbedding(
+                    id=uuid.uuid4(),
+                    repo_id=repo_id,
+                    file_id=file_ids_by_path.get(chunk.file_path),
+                    file_path=chunk.file_path,
+                    language=chunk.language,
+                    symbol_kind=chunk.symbol_kind,
+                    symbol_name=chunk.symbol_name,
+                    start_line=chunk.start_line,
+                    end_line=chunk.end_line,
+                    content=chunk.content,
+                    embedding=vector,
+                )
+                for chunk, vector in zip(batch, vectors)
+            ]
+            db.add_all(rows)
+            db.flush()
+            inserted += len(rows)
+            log.info("embedded %d/%d chunks", inserted, len(chunks))
+        return inserted, None
+    except Exception as exc:  # noqa: BLE001 — never fail the job over this
+        db.rollback()
+        message = f"warning: embeddings skipped ({type(exc).__name__}: {exc})"
+        log.warning("embedding pass failed, structure kept: %s", message)
+        return 0, message[:2000]
+
+
 @celery_app.task(bind=True, name="ingestion.ingest_repo")
 def ingest_repo(self, job_id: str) -> dict:
-    """Walk, filter, parse, and persist a repo's structure; finalize the job."""
+    """Walk, filter, parse, chunk, embed, and persist; finalize the job."""
     now = datetime.now(timezone.utc)
     with db_session() as db:
         job = db.get(AnalysisJob, job_id)
@@ -74,12 +155,15 @@ def ingest_repo(self, job_id: str) -> dict:
             languages: dict[str, int] = {}
             files_indexed = 0
             symbols_indexed = 0
-            files_by_path: dict[str, SourceFile] = {}
+            # path -> file id (not the ORM row): the embedding phase runs after
+            # a commit, and touching an expired SourceFile would re-query.
+            file_ids_by_path: Dict[str, uuid.UUID] = {}
             pending_import_edges: list[tuple[str, uuid.UUID]] = []
             file_rows: list[SourceFile] = []
             symbol_rows: list[Symbol] = []
             import_rows: list[ImportStatement] = []
             edge_rows: list[CodeEdge] = []
+            chunks: List[Chunk] = []
 
             for file_path in iter_source_files(clone_dir):
                 files_indexed += 1
@@ -104,7 +188,19 @@ def ingest_repo(self, job_id: str) -> dict:
                     parse_error=parsed.error,
                 )
                 file_rows.append(file_row)
-                files_by_path[rel_posix.as_posix()] = file_row
+                file_ids_by_path[rel_posix.as_posix()] = file_row.id
+
+                # Step 7: chunk straight off the spans tree-sitter just gave
+                # us, so every chunk's line metadata is the parser's, not a
+                # re-derivation that could drift.
+                chunks.extend(
+                    chunk_file(
+                        file_path=rel_posix.as_posix(),
+                        language=lang,
+                        text=source.decode("utf-8", errors="replace"),
+                        symbols=parsed.symbols,
+                    )
+                )
 
                 for sym in parsed.symbols:
                     sym_row = Symbol(
@@ -153,8 +249,8 @@ def ingest_repo(self, job_id: str) -> dict:
 
             # Second pass: link imports to files that were actually indexed.
             for resolved_path, source_file_id in pending_import_edges:
-                target = files_by_path.get(resolved_path)
-                if target is not None:
+                target_id = file_ids_by_path.get(resolved_path)
+                if target_id is not None:
                     edge_rows.append(
                         CodeEdge(
                             id=uuid.uuid4(),
@@ -162,7 +258,7 @@ def ingest_repo(self, job_id: str) -> dict:
                             source_kind="file",
                             source_id=source_file_id,
                             edge_type="imports",
-                            target_id=target.id,
+                            target_id=target_id,
                         )
                     )
 
@@ -181,17 +277,43 @@ def ingest_repo(self, job_id: str) -> dict:
             job.files_indexed = files_indexed
             job.symbols_indexed = symbols_indexed
             job.languages = languages or None
-            job.status = JOB_COMPLETED
-            job.finished_at = datetime.now(timezone.utc)
+            # Commit the structure before embedding: the embedding pass is slow
+            # and depends on a ~1.5GB model, so a failure there must not cost
+            # us the structural index. The job stays `running` until it ends.
             # Commit inside the try so a commit-time failure still lands on the
             # job row below. db_session()'s outer commit then becomes a no-op.
+            db.commit()
+
+            # Step 7: embed the chunks collected during the walk.
+            chunks_indexed = 0
+            embed_warning: Optional[str] = None
+            if not settings.EMBEDDING_ENABLED:
+                embed_warning = "warning: embeddings disabled (EMBEDDING_ENABLED=false)"
+                log.info("embedding pass skipped: EMBEDDING_ENABLED=false")
+            else:
+                chunks_indexed, embed_warning = _embed_chunks(
+                    db,
+                    repo_id=job.repo_id,
+                    chunks=chunks,
+                    file_ids_by_path=file_ids_by_path,
+                )
+
+            job.chunks_indexed = chunks_indexed
+            job.status = JOB_COMPLETED
+            job.finished_at = datetime.now(timezone.utc)
+            if embed_warning:
+                # Visible via GET /jobs/{id} without failing the run: the
+                # structure is indexed, only the vectors are missing.
+                job.error = embed_warning
             db.commit()
             return {
                 "ok": True,
                 "files_scanned": files_scanned,
                 "files_indexed": files_indexed,
                 "symbols_indexed": symbols_indexed,
+                "chunks_indexed": chunks_indexed,
                 "languages": languages,
+                "warning": embed_warning,
             }
         except Exception as exc:  # noqa: BLE001 — persist any failure on the job
             db.rollback()

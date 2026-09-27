@@ -48,6 +48,7 @@ export interface AnalysisJob {
   files_scanned: number
   files_indexed: number
   symbols_indexed: number
+  chunks_indexed: number
   languages: Record<string, number> | null
   created_at: string
 }

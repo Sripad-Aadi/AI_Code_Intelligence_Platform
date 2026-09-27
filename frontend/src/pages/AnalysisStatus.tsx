@@ -77,15 +77,25 @@ export default function AnalysisStatus() {
           ) : null}
 
           {job.data.error ? (
-            <div className="card border-rose-200 p-4 text-sm text-rose-700">
-              <p className="font-semibold">Job failed</p>
+            <div
+              className={`card p-4 text-sm ${
+                job.data.status === 'failed'
+                  ? 'border-rose-200 text-rose-700'
+                  : 'border-amber-200 text-amber-800'
+              }`}
+            >
+              <p className="font-semibold">
+                {job.data.status === 'failed'
+                  ? 'Job failed'
+                  : 'Completed with warnings'}
+              </p>
               <p className="mt-1 font-mono text-xs">{job.data.error}</p>
             </div>
           ) : null}
 
           <div className="card p-4">
             <h2 className="label">Counts</h2>
-            <dl className="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <dl className="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-5">
               <div>
                 <dt className="text-xs text-slate-400">Files scanned</dt>
                 <dd className="text-2xl font-bold text-slate-900">
@@ -102,6 +112,12 @@ export default function AnalysisStatus() {
                 <dt className="text-xs text-slate-400">Symbols indexed</dt>
                 <dd className="text-2xl font-bold text-slate-900">
                   {job.data.symbols_indexed}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-400">Chunks embedded</dt>
+                <dd className="text-2xl font-bold text-slate-900">
+                  {job.data.chunks_indexed}
                 </dd>
               </div>
               <div>
@@ -142,6 +158,7 @@ export default function AnalysisStatus() {
                 <th className="th">Status</th>
                 <th className="th">Files</th>
                 <th className="th">Symbols</th>
+                <th className="th">Chunks</th>
                 <th className="th">Finished</th>
               </tr>
             </thead>
@@ -157,6 +174,7 @@ export default function AnalysisStatus() {
                     {j.files_indexed}/{j.files_scanned}
                   </td>
                   <td className="td">{j.symbols_indexed}</td>
+                  <td className="td">{j.chunks_indexed}</td>
                   <td className="td">
                     {j.finished_at
                       ? new Date(j.finished_at).toLocaleString()

@@ -1,5 +1,6 @@
 """Models package — exports all ORM models for Alembic autogenerate."""
 
+from app.models.code_embedding import CodeEmbedding
 from app.models.edge import CodeEdge
 from app.models.file import SourceFile
 from app.models.import_stmt import ImportStatement
@@ -18,4 +19,5 @@ __all__ = [
     "Symbol",
     "ImportStatement",
     "CodeEdge",
+    "CodeEmbedding",
 ]

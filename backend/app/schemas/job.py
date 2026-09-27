@@ -21,5 +21,6 @@ class AnalysisJobRead(BaseModel):
     files_scanned: int = 0
     files_indexed: int = 0
     symbols_indexed: int = 0
+    chunks_indexed: int = 0
     languages: Optional[Dict[str, int]] = None
     created_at: datetime

@@ -3,9 +3,10 @@
 FastAPI backend + React (Vite) frontend, no Docker. Development is driven by the
 19-step plan in `AI_Software_Engineering_Intelligence_Platform_Implementation_Plan_v2.docx`,
 executed in strict Step 1→19 order with an acceptance gate after each step.
-Steps 1–6 are committed: Step 2 (Supabase auth + projects + repo CRUD), Step 3
+Steps 1–7 are committed: Step 2 (Supabase auth + projects + repo CRUD), Step 3
 (GitHub OAuth + shallow clone), Step 4 (repo ingestion via Celery), Step 5
-(structural code analysis via tree-sitter), and Step 6 (React frontend).
+(structural code analysis via tree-sitter), Step 6 (React frontend), and Step 7
+(code chunking + jina embeddings into pgvector).
 Step 3's
 end-to-end proof (OAuth → list repos → shallow clone) was verified on 2026-09-26:
 a dev user linked GitHub (`Sripad-Aadi`), listed 18 repos, attached +
@@ -38,7 +39,7 @@ files, 39 symbols) polled like the Analysis-status page does.
 
 ```powershell
 cd backend
-venv\Scripts\python -m pytest                        # tests (20: 3 smoke + 6 ingestion + 11 analysis)
+venv\Scripts\python -m pytest                        # tests (38: 3 smoke + 6 ingestion + 11 analysis + 18 chunking)
 venv\Scripts\python -m ruff check app tests alembic  # lint: E/W/F/I, line 88
 venv\Scripts\python -m ruff format --check app tests alembic
 venv\Scripts\uvicorn app.main:app --reload           # API on :8000
@@ -103,6 +104,36 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   kotlin, scala, bash, css, html, json, yaml, toml, sql, lua, r, elixir,
   erlang, haskell. **Missing** (files recorded, not parsed): c-sharp, swift,
   dart, zig, scss.
+- **Embedding stack pins (Step 7, verified by ImportError)**: `transformers`
+  **must stay on 4.x**. `jina-embeddings-v2` ships a custom `JinaBertForMaskedLM`
+  behind an `auto_map`, so it loads via `trust_remote_code=True` — and that
+  remote `modeling_bert.py` does
+  `from transformers.pytorch_utils import find_pruneable_heads_and_indices`,
+  which **transformers 5.x removed**. transformers 5.17 + sentence-transformers
+  6.1 fail at model load with `ImportError: cannot import name
+  'find_pruneable_heads_and_indices'`. Since sentence-transformers 6.x
+  hard-requires `transformers>=5,<6`, both go back together: pinned set is
+  `sentence-transformers==3.4.1`, `transformers==4.46.3`,
+  `huggingface-hub==0.35.3` (hub 0.x because only ST 6.x accepts hub 1.x, and
+  the transformers-4.x custom-code loader expects the 0.x API). `torch` must be
+  the **CPU wheel** (`--index-url https://download.pytorch.org/whl/cpu`,
+  124MB) — the default PyPI wheel drags in ~2.5GB of unused CUDA libraries.
+- **int8 dynamic quantization does NOT work for this model** (Step 7, measured):
+  `torch.ao.quantization.quantize_dynamic(model, {torch.nn.Linear})` is
+  *slower* than fp32 here (0.69x) **and wrong** — it bypasses the output
+  normalisation, returning vectors of norm ~146 instead of 1.0 (mean cosine
+  vs fp32 = 146.0), which would silently destroy `<=>` cosine search. Do not
+  "optimise" with it.
+- **CPU embedding throughput (Step 7, measured on this i5-1235U)**: ~8.5s per
+  chunk steady-state for a small repo (77 chunks ≈ 11 min), and the **first**
+  `encode()` call in a fresh process is far slower again (~10.8s/chunk; oneDNN
+  JIT + allocator + thread-pool warmup). The first 16-chunk batch of a
+  cold worker is the worst case. `model.max_seq_length` between 512/1024/2048
+  made no measurable difference (the median chunk is 13 lines), so 2048 is
+  safe. Practical consequence: the first ingest of a repo after a worker
+  restart costs minutes, not seconds — that is expected, not a hang. The
+  model is cached per process (`app/embeddings/jina.py` module global), so
+  later repos in the same worker skip the 24s load.
 
 ## Alembic / database state
 
@@ -112,12 +143,39 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   (already done).
 - Autogenerate works: `alembic/env.py` imports `app.models`, so `Base.metadata`
   is populated and real migrations are produced (verified while generating the
-  `analysis_jobs` table). Applied head: `a6dac032b9b5` (add structural analysis
-  tables), previous: `79b4d93cb86f` (add analysis_jobs), before that:
+  `analysis_jobs` table). Applied head: `d7c86d75d7b7` (add code_embeddings +
+  `analysis_jobs.chunks_indexed`), previous: `a6dac032b9b5` (add structural
+  analysis tables), before that: `79b4d93cb86f` (add analysis_jobs), then
   `12097b55786a` (users GitHub columns). `alembic current` =
-  `a6dac032b9b5 (head)`. The `symbols_indexed` add_column carries
-  `server_default='0'` (existing analysis_jobs rows would otherwise fail the
-  NOT NULL ALTER).
+  `d7c86d75d7b7 (head)`. The `symbols_indexed` and `chunks_indexed` add_columns
+  carry `server_default='0'` (existing analysis_jobs rows would otherwise fail
+  the NOT NULL ALTER).
+- **pgvector is already enabled** on this Supabase project (verified 2026-09-27:
+  `pg_extension` has `vector 0.8.2`, PostgreSQL 17.6, and the `hnsw` access
+  method exists), so the Step 1 dashboard toggle was done. Migration
+  `d7c86d75d7b7` still runs `CREATE EXTENSION IF NOT EXISTS vector` so a fresh
+  database works without the manual toggle.
+- The HNSW index is created **by the migration**
+  (`ix_code_embeddings_embedding_hnsw`, `vector_cosine_ops`, `m=16`,
+  `ef_construction=64`) rather than by pasting into the Supabase SQL editor as
+  the plan says, so it is reproducible and `alembic downgrade` can drop it.
+- Autogenerate does **not** emit the `import pgvector.sqlalchemy` line even
+  though the generated `create_table` body references `pgvector.sqlalchemy…`.
+  The checked-in migration was hand-corrected to import it explicitly.
+- **pgvector value API gotchas (verified by round-trip)**: with
+  `register_vector` wired up, a `select embedding` returns a
+  `pgvector.psycopg2.vector.Vector`, which
+  * has **no `__iter__`** — `np.asarray(v)` and `list(v)` both raise
+    `TypeError: float() argument must be a string or a real number, not
+    'Vector'`. Use `v.to_numpy()` or `v.to_list()`.
+  * exposes `dimensions` as a **method**, not a property (`v.dimensions()`).
+  * therefore `arr = np.array([v.to_numpy() for v in rows])` is the shape of
+    code to copy in Step 8.
+  Writes work by passing either a `list`/`numpy` array or the `[0.1, ...]`
+  **string** form — pgvector's implicit `text <-> vector` casts mean the
+  string form is fine, including as a bound param in `embedding <=> :qv`.
+  Cosine semantics check out on the live DB: distance to self = 0.000000,
+  to an orthogonal unit vector = 1.000000.
 
 ## Supabase free-tier quirks
 
@@ -173,7 +231,40 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   (file + its symbols), `GET /repos/{id}/symbols` (kind/name filters), and
   `GET /repos/{id}/edges?edge_type=imports|belongs_to` (file→file / symbol→file).
   `chat`, `findings`, `search`, `pull_requests`, `webhooks` are placeholder
-  stubs for later steps and remain commented out in `app/main.py`.
+  stubs for later steps and remain commented out in `app/main.py`. Step 7 adds
+  **no** endpoint — retrieval is Step 8's job; the only API surface that
+  changed is `chunks_indexed` on the `AnalysisJobRead` schema.
+- Step 7 embeddings (`backend/app/embeddings/`): `chunker.py` is **pure stdlib**
+  (hermetic, 18 unit tests in `tests/test_chunking.py`) and does the chunking
+  straight off the Step-5 symbol spans, so line metadata is the parser's own
+  and cannot drift. One chunk per **top-level** symbol (nesting is detected by
+  span containment, so a class chunk carries its methods and they are not
+  emitted twice); files with no parseable structure fall back to markdown
+  heading sections or paragraph blocks with `symbol_name` NULL. Spans over
+  `MAX_CHUNK_LINES=120` are windowed into 100-line chunks with 20-line overlap,
+  every window keeping its own exact `start_line`/`end_line`. Blank edges are
+  trimmed so `content` starts on real code. `contextualize()` prepends
+  `# file: …` / `# symbol: kind name (lines a-b)` to the text handed to the
+  model while `content` stays the verbatim span — that is why the two differ.
+  `jina.py` wraps the model: lazy, process-cached, `trust_remote_code=True`,
+  L2-normalised (hence pgvector `<=>` cosine is meaningful), and
+  `embed_query()` is the Step 8 entry point. Config: `EMBEDDING_ENABLED`
+  (kill switch — structure still indexes), `EMBEDDING_MODEL`,
+  `EMBEDDING_BATCH_SIZE`, `EMBEDDING_MAX_SEQ_LENGTH`. `_embed_chunks` in
+  `app/tasks/inject_repo.py` never raises: it catches everything, rolls back
+  the partial batch, and returns a `warning: …` string that the task stores on
+  `job.error` **with status `completed`**, so a bad model download can never
+  destroy the Steps 4–5 index. `AnalysisStatus.tsx` renders that as amber
+  "Completed with warnings" (not the red "Job failed") whenever
+  `status !== 'failed'`. `pgvector.psycopg2.register_vector` is wired as a
+  SQLAlchemy `connect` event in `app/db/session.py`.
+- **Step 7 ingest ordering** (extends the flush-ordering rule below): the
+  structural phase **commits first** (`db.commit()` while the job is still
+  `running`), then chunks are embedded in batches of 200 rows
+  (`EMBED_BATCH_ROWS`) with a flush per batch, then the job is marked completed
+  and committed again. The walk collects `file_ids_by_path: dict[str, UUID]`
+  rather than ORM `SourceFile` objects on purpose — after the mid-task commit
+  those objects are expired and every `.id` access would re-query.
 - Step 6 frontend (`frontend/`, Vite 8 + React 19 + TS 6): `src/api/client.ts`
   is the typed fetch client (Bearer JWT from `localStorage`, 401 clears it,
   `VITE_API_BASE` default `http://localhost:8000`), `src/api/types.ts` mirrors
@@ -209,7 +300,8 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   `app/worker.py` (Celery app), `app/tasks/inject_repo.py` (`ingestion.ingest_repo`
   task — walks the clone, updates the `analysis_jobs` row). `analysis_jobs`
   columns: id, repo_id, status, started_at, finished_at, error, files_scanned,
-  files_indexed, symbols_indexed, languages (JSON histogram), created_at.
+  files_indexed, symbols_indexed, chunks_indexed (Step 7), languages (JSON
+  histogram), created_at.
 - Step 5 structural analysis: `app/analysis/parsers.py` (tree-sitter parse →
   symbols with precise 1-based line spans, imports, FastAPI/Flask + Express
   routes; per-grammar cached parsers; a bad parse returns `ParseResult(error)`
@@ -223,7 +315,15 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   file|symbol, edge_type imports|belongs_to, target FK files.id). Route-decorated
   Python handlers count once (the route symbol; the inner function_definition
   is skipped); JS/TS named arrow functions (`const fn = () => {}`) are captured
-  as symbols.
+  as symbols. **Route symbols are named `"<METHOD> <path>"`** (e.g.
+  `GET /items/{item_id}`), not after the handler function — tests asserting on
+  route names need that spelling.
+- Step 7 vectors: table `code_embeddings` (id, repo_id, file_id FK→files ON
+  DELETE CASCADE, file_path, language, symbol_kind, symbol_name, start_line,
+  end_line, content, embedding `vector(768)`, created_at) + the HNSW cosine
+  index. The plan's column list had no `file_id`/`language`/`symbol_kind`; they
+  are additions because this step's stated focus is the row metadata, and
+  `file_id` is what lets re-indexing delete chunks by cascade.
 - **CRITICAL flush-ordering gotcha**: the ORM unit-of-work sorts INSERTs by
   declared `relationship()`s, and this project's models declare none — the
   insert order falls out of mapper registration order (CodeEdge registers first,

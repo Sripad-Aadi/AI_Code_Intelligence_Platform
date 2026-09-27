@@ -49,6 +49,30 @@ class Settings(BaseSettings):
         default="./.clones", description="Dir for shallow git clones of repos"
     )
 
+    # Code embeddings (Step 7) — CPU-only sentence-transformers model
+    EMBEDDING_ENABLED: bool = Field(
+        default=True,
+        description=(
+            "Set false to run Steps 4-5 ingestion without downloading/loading "
+            "the embedding model (structure is still indexed)."
+        ),
+    )
+    EMBEDDING_MODEL: str = Field(
+        default="jinaai/jina-embeddings-v2-base-code",
+        description="sentence-transformers model id (768-dim, 8192 ctx)",
+    )
+    EMBEDDING_BATCH_SIZE: int = Field(
+        default=16, description="Chunks per forward pass (plan: 16-32 on CPU)"
+    )
+    EMBEDDING_MAX_SEQ_LENGTH: int = Field(
+        default=2048,
+        description=(
+            "Token cap per chunk. The model was trained at 512 and "
+            "extrapolates to 8192; this trades a little recall on very long "
+            "chunks for CPU speed. Keep it >= the longest chunk in tokens."
+        ),
+    )
+
     # LLM Provider
     LLM_PROVIDER: str = Field(default="groq", description="LLM provider (groq|gemini)")
     GROQ_API_KEY: Optional[str] = Field(default=None, description="Groq API key")
