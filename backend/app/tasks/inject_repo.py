@@ -16,6 +16,7 @@ to a warning on the job instead (see `_embed_chunks`).
 
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -77,13 +78,20 @@ def _embed_chunks(
     if not chunks:
         return 0, None
 
+    # Wall clock for the embed pass only. Deliberately excludes the structural
+    # walk (logged separately above) and, on a cold worker, the one-off model
+    # load — `app.embeddings.jina.get_model` logs that separately, because
+    # "10s per chunk" and "24s once per process" need different fixes.
+    embed_started = time.perf_counter()
     try:
         from app.embeddings.jina import embed_passages
 
         inserted = 0
         for start in range(0, len(chunks), EMBED_BATCH_ROWS):
             batch = chunks[start : start + EMBED_BATCH_ROWS]
+            batch_started = time.perf_counter()
             vectors = embed_passages([contextualize(chunk) for chunk in batch])
+            batch_s = time.perf_counter() - batch_started
 
             if len(vectors) != len(batch):
                 raise RuntimeError(
@@ -116,12 +124,30 @@ def _embed_chunks(
             db.add_all(rows)
             db.flush()
             inserted += len(rows)
-            log.info("embedded %d/%d chunks", inserted, len(chunks))
+            log.info(
+                "embedded %d/%d chunks (last batch of %d took %.1fs = %.2fs/chunk)",
+                inserted,
+                len(chunks),
+                len(batch),
+                batch_s,
+                batch_s / max(len(batch), 1),
+            )
+        total_s = time.perf_counter() - embed_started
+        log.info(
+            "embedding pass done: %d chunks in %.1fs = %.2fs/chunk",
+            inserted,
+            total_s,
+            total_s / max(inserted, 1),
+        )
         return inserted, None
     except Exception as exc:  # noqa: BLE001 — never fail the job over this
         db.rollback()
         message = f"warning: embeddings skipped ({type(exc).__name__}: {exc})"
-        log.warning("embedding pass failed, structure kept: %s", message)
+        log.warning(
+            "embedding pass failed after %.1fs, structure kept: %s",
+            time.perf_counter() - embed_started,
+            message,
+        )
         return 0, message[:2000]
 
 
@@ -148,6 +174,7 @@ def ingest_repo(self, job_id: str) -> dict:
                 )
 
             _replace_repo_analysis(db, job.repo_id)
+            walk_started = time.perf_counter()
 
             # Raw count of every file entry in the tree (includes ignored files).
             files_scanned = sum(len(files) for _, _, files in os.walk(clone_dir))
@@ -248,6 +275,13 @@ def ingest_repo(self, job_id: str) -> dict:
                         pending_import_edges.append((resolved, file_row.id))
 
             # Second pass: link imports to files that were actually indexed.
+            log.info(
+                "structural pass: %d files, %d symbols, %d chunks in %.1fs",
+                files_indexed,
+                symbols_indexed,
+                len(chunks),
+                time.perf_counter() - walk_started,
+            )
             for resolved_path, source_file_id in pending_import_edges:
                 target_id = file_ids_by_path.get(resolved_path)
                 if target_id is not None:

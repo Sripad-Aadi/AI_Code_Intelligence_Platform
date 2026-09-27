@@ -59,17 +59,34 @@ class Settings(BaseSettings):
     )
     EMBEDDING_MODEL: str = Field(
         default="jinaai/jina-embeddings-v2-base-code",
-        description="sentence-transformers model id (768-dim, 8192 ctx)",
+        description="sentence-transformers model id (768-dim, 512 trained ctx)",
     )
     EMBEDDING_BATCH_SIZE: int = Field(
         default=16, description="Chunks per forward pass (plan: 16-32 on CPU)"
     )
     EMBEDDING_MAX_SEQ_LENGTH: int = Field(
-        default=2048,
+        default=512,
         description=(
-            "Token cap per chunk. The model was trained at 512 and "
-            "extrapolates to 8192; this trades a little recall on very long "
-            "chunks for CPU speed. Keep it >= the longest chunk in tokens."
+            "Token cap per chunk. This is the model's *trained* context (the "
+            "8192 figure is an extrapolation) and it is also the single "
+            "biggest cost lever: measured on an i5-1235U, embedding runs at a "
+            "flat ~191 tok/s of padded input, and the chunk length "
+            "distribution is long-tailed (median 152 tokens, p90 645, max "
+            "3458), so the one batch of longest chunks dominated total ingest "
+            "time. Capping at 512 leaves 69 of 77 demo chunks untouched and "
+            "shrinks the worst batch ~6.8x. Truncation affects only the "
+            "vector — `content` is still stored verbatim."
+        ),
+    )
+    EMBEDDING_TORCH_THREADS: Optional[int] = Field(
+        default=None,
+        description=(
+            "torch CPU threads for the embed pass. Unset = torch's default, "
+            "which measured FASTER than any pin on this machine (see AGENTS.md "
+            "for the table), so leave it alone unless you are tuning a "
+            "different CPU. When set, app/embeddings/jina.py exports "
+            "OMP_NUM_THREADS/MKL_NUM_THREADS before importing torch (OpenMP "
+            "reads them at init) and then calls torch.set_num_threads()."
         ),
     )
 

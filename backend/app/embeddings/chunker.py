@@ -29,9 +29,12 @@ if TYPE_CHECKING:  # typing only — keeps tree-sitter out of this module
 
 log = logging.getLogger(__name__)
 
-# A chunk longer than this is windowed. 120 lines of code is roughly 1.4k
-# tokens, comfortably inside Settings.EMBEDDING_MAX_SEQ_LENGTH (2048), so a
-# chunk is embedded whole instead of being silently truncated.
+# A chunk longer than this is windowed. Note the measured reality: code is
+# token-dense, and on the demo repo 120 lines was ~3.4k tokens, not the ~1.4k
+# this comment used to claim. Chunks here are deliberately NOT kept inside
+# EMBEDDING_MAX_SEQ_LENGTH: `content` is stored verbatim regardless, and
+# truncating the *vector* for the long tail is much cheaper than fragmenting
+# every symbol. See AGENTS.md for the measured cost of the tail.
 MAX_CHUNK_LINES = 120
 WINDOW_LINES = 100
 WINDOW_OVERLAP_LINES = 20

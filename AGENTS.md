@@ -124,16 +124,43 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   normalisation, returning vectors of norm ~146 instead of 1.0 (mean cosine
   vs fp32 = 146.0), which would silently destroy `<=>` cosine search. Do not
   "optimise" with it.
-- **CPU embedding throughput (Step 7, measured on this i5-1235U)**: ~8.5s per
-  chunk steady-state for a small repo (77 chunks ≈ 11 min), and the **first**
-  `encode()` call in a fresh process is far slower again (~10.8s/chunk; oneDNN
-  JIT + allocator + thread-pool warmup). The first 16-chunk batch of a
-  cold worker is the worst case. `model.max_seq_length` between 512/1024/2048
-  made no measurable difference (the median chunk is 13 lines), so 2048 is
-  safe. Practical consequence: the first ingest of a repo after a worker
-  restart costs minutes, not seconds — that is expected, not a hang. The
-  model is cached per process (`app/embeddings/jina.py` module global), so
-  later repos in the same worker skip the 24s load.
+- **CPU embedding throughput (Step 7, re-measured on this i5-1235U — the old
+  note here was wrong, see below)**: the demo repo's 77 chunks now embed in
+  ~1.2–1.6s/chunk (89–125s) at `EMBEDDING_MAX_SEQ_LENGTH=512`, down from
+  ~7–11s/chunk. `max_seq_length` is the dominant lever and **512 is correct**,
+  not just cheap: it is the model's *trained* context, whereas 2048 was an
+  extrapolation.
+  - **Why the long tail dominated**: cost is strictly `padded_tokens / ~200
+    tok/s`, and ST pads each batch to *that batch's* longest member
+    (`padding=True` = longest-in-batch, never `max_length`; truncation is
+    already `longest_first` with `max_length`, so no `truncation=True` /
+    `padding='longest'` fix is needed — that code is correct upstream).
+    Chunk lengths are very long-tailed — median 152 tok but p90 645 and max
+    3458, with 8 of 77 over 512 — so at 2048 one batch of 16 padded to 3458
+    alone ran **over 10 minutes** while a median batch of 16 took 14s.
+  - **Attention is quadratic in sequence length**, so the tail is worse than
+    linear: throughput *falls* from 209 tok/s at 512 to 125 tok/s at 1024.
+    Measured 77-chunk totals: 512 → 89–125s, 1024 → 215s.
+  - Truncation hits only the **vector**, never the stored `content` (which
+    stays the verbatim span), and only 8/77 chunks are affected. A 3,458-tok
+    chunk embeds *faster* (4.96s) than a 1,301-tok one (8.85s) precisely
+    because it truncates to 512.
+- **`EMBEDDING_TORCH_THREADS` is a knob, not a fix** (measured, full 77-chunk
+  repo at 512): 1 → 300s, 2 → 197s, 4 → 183s, 6 → 174s, 8 → 132s, 12 → 149s,
+  and torch's own default (10) → 89–125s. The 8/10/12 rows are within
+  run-to-run noise (~40% spread, likely thermal), so the default wins and the
+  setting stays **unset by default**. An earlier hypothesis that OpenMP
+  spin-wait on this 2P+8E part was the cause was **wrong** — single-threaded is
+  3.4x *slower*, so threading genuinely helps. `jina.py:_configure_threads()`
+  exports `OMP_NUM_THREADS`/`MKL_NUM_THREADS` *before* `import torch` (OpenMP
+  reads them at init) and also calls `torch.set_num_threads()`; that ordering
+  is load-bearing.
+- **Model load is ~6–24s, one-off per process** (24s cold, ~6s with a warm HF
+  cache), and is now logged separately from encode time, as are the structural
+  walk and the embed pass — so "slow worker" is diagnosable from the log
+  without re-timing by hand. The model is cached per process
+  (`app/embeddings/jina.py` module global), so later repos in the same worker
+  skip the load.
 
 ## Alembic / database state
 
