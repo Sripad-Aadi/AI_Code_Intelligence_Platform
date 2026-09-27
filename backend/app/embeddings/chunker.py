@@ -216,6 +216,15 @@ def _window_spans(start: int, end: int) -> List[Tuple[int, int]]:
     if end - start + 1 <= MAX_CHUNK_LINES:
         return [(start, end)]
 
+    # The cursor must advance on every step, or this loops forever inside a
+    # Celery worker. Cheap insurance against a bad constant edit above.
+    stride = WINDOW_LINES - WINDOW_OVERLAP_LINES
+    if stride < 1:
+        raise ValueError(
+            f"WINDOW_OVERLAP_LINES={WINDOW_OVERLAP_LINES} must be less than "
+            f"WINDOW_LINES={WINDOW_LINES} or windowing cannot make progress"
+        )
+
     spans: List[Tuple[int, int]] = []
     cursor = start
     while True:
