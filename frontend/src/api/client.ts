@@ -3,15 +3,28 @@
 import type {
   AnalysisJob,
   AttachedRepoRow,
+  BenchmarkStatusResponse,
+  ChatResponse,
+  ChatRequest,
+  CostSummaryResponse,
   FileWithSymbols,
+  FindingsSummary,
   GitHubRepo,
   GithubStatus,
   ImportEdge,
+  JobStatsResponse,
+  PRAnalysisResult,
   Project,
   ProjectRepository,
   ProjectWithRepos,
+  RiskFindingListResponse,
+  RiskLevel,
+  SearchResponse,
   SourceFile,
   Symbol,
+  WebhookDeleteResponse,
+  WebhookListResponse,
+  WebhookRegisterResponse,
 } from './types'
 
 const TOKEN_KEY = 'ai_sip_access_token'
@@ -124,6 +137,11 @@ export const detachRepository = (projectId: string, repoId: string) =>
     method: 'DELETE',
   })
 
+export const registerWebhook = (repoId: string) =>
+  apiFetch<WebhookRegisterResponse>(`/webhooks/github/register/${repoId}`, {
+    method: 'POST',
+  })
+
 // --- Ingestion jobs (Step 4) ---
 
 export const startIngestion = (repoId: string) =>
@@ -167,3 +185,113 @@ export const listRepoEdges = (
   edgeType: 'imports' | 'belongs_to' = 'imports',
   limit = 500,
 ) => apiFetch<ImportEdge[]>(`/repos/${repoId}/edges?edge_type=${edgeType}&limit=${limit}`)
+
+// --- Semantic search (Step 8) ---
+
+export const searchRepo = (
+  repoId: string,
+  query: string,
+  opts: { k?: number; language?: string; file_path?: string } = {},
+) => {
+  const params = new URLSearchParams()
+  params.set('q', query)
+  if (opts.k) params.set('k', String(opts.k))
+  if (opts.language) params.set('language', opts.language)
+  if (opts.file_path) params.set('file_path', opts.file_path)
+  return apiFetch<SearchResponse>(`/repos/${repoId}/search?${params.toString()}`)
+}
+
+export const searchAcrossRepos = (
+  query: string,
+  opts: { k?: number; language?: string; repo_ids?: string } = {},
+) => {
+  const params = new URLSearchParams()
+  params.set('q', query)
+  if (opts.k) params.set('k', String(opts.k))
+  if (opts.language) params.set('language', opts.language)
+  if (opts.repo_ids) params.set('repo_ids', opts.repo_ids)
+  return apiFetch<SearchResponse>(`/repos/search?${params.toString()}`)
+}
+
+// --- Chat (Step 9) ---
+
+export const chat = (request: ChatRequest) =>
+  apiFetch<ChatResponse>('/chat', jsonBody(request))
+
+// --- Findings (Step 12) ---
+
+export const listRepoFindings = (
+  repoId: string,
+  opts: { risk_level?: RiskLevel; min_probability?: number; limit?: number; offset?: number } = {},
+) => {
+  const params = new URLSearchParams()
+  if (opts.risk_level) params.set('risk_level', opts.risk_level)
+  if (opts.min_probability) params.set('min_probability', String(opts.min_probability))
+  if (opts.limit) params.set('limit', String(opts.limit))
+  if (opts.offset) params.set('offset', String(opts.offset))
+  return apiFetch<RiskFindingListResponse>(`/repos/${repoId}/findings?${params.toString()}`)
+}
+
+export const getFindingsSummary = (repoId: string) =>
+  apiFetch<FindingsSummary>(`/repos/${repoId}/findings/summary`)
+
+// --- PR Analysis (Step 14-15) ---
+
+export const getPRAnalysis = (repoId: string, prNumber: number) =>
+  apiFetch<PRAnalysisResult>(`/repos/${repoId}/prs/${prNumber}/analysis`)
+
+// --- Observability (Step 19) ---
+
+export const getJobStats = (repoId?: string) => {
+  const params = new URLSearchParams()
+  if (repoId) params.set('repo_id', repoId)
+  return apiFetch<JobStatsResponse>(`/observability/jobs/stats?${params.toString()}`)
+}
+
+export const getBenchmarkStatus = () =>
+  apiFetch<BenchmarkStatusResponse>('/observability/benchmarks/status')
+
+export const runRetrievalBenchmark = (repoId: string, k = 10) =>
+  apiFetch<{ repo_id: string; questions_run: number; summary: Record<string, unknown>; results: unknown[] }>(
+    `/observability/benchmarks/retrieval/run?repo_id=${repoId}&k=${k}`,
+    { method: 'POST' },
+  )
+
+// --- Risk Model Training (Step 10-11) ---
+
+export const trainRiskModel = (repoIds?: string[], modelType = 'logistic') => {
+  const params = new URLSearchParams()
+  if (repoIds) params.set('repo_ids', repoIds.join(','))
+  params.set('model_type', modelType)
+  return apiFetch<{ ok: boolean; message: string }>(
+    `/risk/train?${params.toString()}`,
+    { method: 'POST' },
+  )
+}
+
+export const evaluateRiskModel = (repoIds?: string[]) => {
+  const params = new URLSearchParams()
+  if (repoIds) params.set('repo_ids', repoIds.join(','))
+  return apiFetch<{ ok: boolean; message: string }>(
+    `/risk/evaluate?${params.toString()}`,
+    { method: 'POST' },
+  )
+}
+
+// --- Webhooks (Step 13) ---
+
+export const listWebhooks = (repoId: string) =>
+  apiFetch<WebhookListResponse>(`/webhooks/github/list/${repoId}`)
+
+export const deleteWebhook = (repoId: string, hookId: number) =>
+  apiFetch<WebhookDeleteResponse>(`/webhooks/github/delete/${repoId}/${hookId}`, {
+    method: 'DELETE',
+  })
+
+// --- Cost Tracking (Step 19) ---
+
+export const getCostSummary = (repoId?: string) => {
+  const params = new URLSearchParams()
+  if (repoId) params.set('repo_id', repoId)
+  return apiFetch<CostSummaryResponse>(`/observability/costs/summary?${params.toString()}`)
+}

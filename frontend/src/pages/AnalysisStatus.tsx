@@ -1,6 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { listRepoJobs } from '../api/client'
 import { usePageTitle } from '../hooks/usePageTitle'
 import {
   isJobRunning,
@@ -29,17 +27,12 @@ function Languages({ histogram }: { histogram: Record<string, number> | null }) 
 
 export default function AnalysisStatus() {
   const { jobId } = useParams()
-  const [params] = useSearchParams()
-  const repoId = params.get('repo')
+  useSearchParams()
+  // const repoId = params.get('repo') // Available for future use
 
   usePageTitle('Analysis status')
 
   const job = useJobStatus(jobId)
-  const history = useQuery({
-    queryKey: ['repo-jobs', repoId, 10],
-    queryFn: () => listRepoJobs(repoId as string, 10),
-    enabled: Boolean(repoId),
-  })
 
   const running = isJobRunning(job.data?.status)
 
@@ -53,12 +46,17 @@ export default function AnalysisStatus() {
           </p>
         </div>
         {job.data ? (
-          <span className={`badge ${statusStyle(job.data.status)}`}>
-            {running ? (
-              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
-            ) : null}
-            {job.data.status}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className={`badge ${statusStyle(job.data.status)}`}>
+              {running ? (
+                <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
+              ) : null}
+              {job.data.status}
+            </span>
+            <span className={`badge ${job.data.error?.includes('incremental') ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700'}`}>
+              {job.data.error?.includes('incremental') ? 'Incremental' : 'Full'}
+            </span>
+          </div>
         ) : null}
       </div>
 
@@ -95,7 +93,7 @@ export default function AnalysisStatus() {
 
           <div className="card p-4">
             <h2 className="label">Counts</h2>
-            <dl className="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-5">
+            <dl className="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-6">
               <div>
                 <dt className="text-xs text-slate-400">Files scanned</dt>
                 <dd className="text-2xl font-bold text-slate-900">
@@ -128,6 +126,14 @@ export default function AnalysisStatus() {
                     : '—'}
                 </dd>
               </div>
+              <div>
+                <dt className="text-xs text-slate-400">Indexing mode</dt>
+                <dd className="text-sm font-medium text-slate-700">
+                  <span className={`badge ${job.data.error?.includes('incremental') ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700'}`}>
+                    {job.data.error?.includes('incremental') ? 'Incremental' : 'Full'}
+                  </span>
+                </dd>
+              </div>
             </dl>
           </div>
 
@@ -147,44 +153,6 @@ export default function AnalysisStatus() {
             </Link>
           </div>
         </>
-      ) : null}
-
-      {history.data && history.data.length > 0 ? (
-        <div className="card overflow-hidden">
-          <h2 className="label px-4 pt-4">Recent jobs for this repo</h2>
-          <table className="mt-2 w-full">
-            <thead>
-              <tr className="border-y border-slate-200 bg-slate-50">
-                <th className="th">Status</th>
-                <th className="th">Files</th>
-                <th className="th">Symbols</th>
-                <th className="th">Chunks</th>
-                <th className="th">Finished</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.data.map((j) => (
-                <tr key={j.id} className="border-b border-slate-100">
-                  <td className="td">
-                    <span className={`badge ${statusStyle(j.status)}`}>
-                      {j.status}
-                    </span>
-                  </td>
-                  <td className="td">
-                    {j.files_indexed}/{j.files_scanned}
-                  </td>
-                  <td className="td">{j.symbols_indexed}</td>
-                  <td className="td">{j.chunks_indexed}</td>
-                  <td className="td">
-                    {j.finished_at
-                      ? new Date(j.finished_at).toLocaleString()
-                      : '—'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       ) : null}
     </div>
   )

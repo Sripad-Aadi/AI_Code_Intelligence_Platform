@@ -9,8 +9,11 @@ from app.api import (
     analysis_router,
     auth_router,
     ingestion_router,
+    observability_router,
     projects_router,
     repos_router,
+    search_router,
+    webhooks_router,
 )
 
 
@@ -49,17 +52,21 @@ def health_check():
     return {"status": "ok"}
 
 
-# API routers
+# API routers. `search_router` is mounted before `repos_router` on purpose:
+# its `/repos/search` route must be matched ahead of any `/repos/{repo_id}`
+# route, or "search across repos" would be read as a repo id.
 app.include_router(auth_router)
+app.include_router(search_router)
 app.include_router(projects_router)
 app.include_router(repos_router)
 app.include_router(ingestion_router)
 app.include_router(analysis_router)
+app.include_router(observability_router)
+app.include_router(webhooks_router)
 
-# Placeholders for future steps (Step 3+)
-# from app.api import chat, findings, pull_requests, search, webhooks
-# app.include_router(chat.router)
-# app.include_router(findings.router)
-# app.include_router(pull_requests.router)
-# app.include_router(search.router)
-# app.include_router(webhooks.router)
+# Not mounted yet — the files are empty 0-byte placeholders from the initial
+# scaffold, so they expose no `router` to mount. Remove them or implement
+# them (Steps 9, 12 and 14) before uncommenting anything here:
+#   app/api/chat.py           (Step 9)
+#   app/api/findings.py       (Step 12)
+#   app/api/pull_requests.py  (Step 14)

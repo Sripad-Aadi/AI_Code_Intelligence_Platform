@@ -221,6 +221,9 @@ export default function RepoExplorer() {
               {job.status}
             </span>
           ) : null}
+          <Link to={`/search?repo=${repoId}`} className="btn btn-outline">
+            Search this repo
+          </Link>
           <button
             type="button"
             className="btn btn-primary"

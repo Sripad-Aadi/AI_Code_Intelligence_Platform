@@ -98,6 +98,10 @@ class Settings(BaseSettings):
     WEBHOOK_SECRET: Optional[str] = Field(
         default=None, description="GitHub webhook secret"
     )
+    WEBHOOK_URL: Optional[str] = Field(
+        default=None,
+        description="Public webhook URL (e.g., ngrok URL) for GitHub webhooks",
+    )
 
     # Encryption (for stored tokens)
     ENCRYPTION_KEY: Optional[str] = Field(

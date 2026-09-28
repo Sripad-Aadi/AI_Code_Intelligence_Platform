@@ -131,3 +131,74 @@ def get_branch_default_sha(
             return resp.json()["commit"]["sha"]
     except (httpx.HTTPStatusError, KeyError):
         return None
+
+
+async def register_webhook_on_repo(
+    access_token: str,
+    owner: str,
+    repo_name: str,
+    webhook_url: str,
+    secret: str,
+) -> Dict[str, Any]:
+    """
+    Register a webhook on the GitHub repository.
+
+    Events: pull_request (opened, synchronize, reopened), push
+    """
+    url = f"{GITHUB_API_BASE}/repos/{owner}/{repo_name}/hooks"
+    headers = {
+        **_api_headers,
+        "Authorization": f"Bearer {access_token}",
+    }
+    payload = {
+        "name": "web",
+        "active": True,
+        "events": ["pull_request", "push"],
+        "config": {
+            "url": webhook_url,
+            "content_type": "json",
+            "secret": secret,
+            "insecure_ssl": "0",
+        },
+    }
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(url, headers=headers, json=payload)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def list_webhooks_on_repo(
+    access_token: str,
+    owner: str,
+    repo_name: str,
+) -> List[Dict[str, Any]]:
+    """List webhooks registered on the GitHub repository."""
+    url = f"{GITHUB_API_BASE}/repos/{owner}/{repo_name}/hooks"
+    headers = {
+        **_api_headers,
+        "Authorization": f"Bearer {access_token}",
+    }
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.get(url, headers=headers)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def delete_webhook_on_repo(
+    access_token: str,
+    owner: str,
+    repo_name: str,
+    hook_id: int,
+) -> None:
+    """Delete a webhook from the GitHub repository."""
+    url = f"{GITHUB_API_BASE}/repos/{owner}/{repo_name}/hooks/{hook_id}"
+    headers = {
+        **_api_headers,
+        "Authorization": f"Bearer {access_token}",
+    }
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.delete(url, headers=headers)
+        resp.raise_for_status()

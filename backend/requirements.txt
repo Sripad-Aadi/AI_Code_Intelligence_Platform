@@ -26,6 +26,11 @@ transformers==4.46.3
 # 6.x, and the transformers-4.x custom-code loader expects the 0.x API.
 huggingface-hub==0.35.3
 pgvector==0.5.0
+# Step 15/19 risk model + eval harness: imported only by
+# app/benchmarks/risk_eval.py today (app/risk_model/ is not implemented yet),
+# but they are real third-party imports and must be declared.
+numpy==2.5.3
+scikit-learn==1.9.1
 ruff==0.16.8
 black==26.5.1
 pytest==9.1.1

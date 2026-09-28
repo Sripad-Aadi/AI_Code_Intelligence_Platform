@@ -7,6 +7,7 @@ import {
   getProject,
   listGitHubRepos,
   listRepoJobs,
+  registerWebhook,
   startIngestion,
 } from '../api/client'
 import type { ProjectRepository } from '../api/types'
@@ -34,6 +35,16 @@ function RepoRow({ repo }: { repo: ProjectRepository }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project'] })
       queryClient.invalidateQueries({ queryKey: ['attached-repos'] })
+    },
+  })
+
+  const registerWebhookMutation = useMutation({
+    mutationFn: () => registerWebhook(repo.id),
+    onSuccess: () => {
+      // Webhook registered successfully
+    },
+    onError: (err: Error) => {
+      window.alert(`Failed to register webhook: ${err.message}`)
     },
   })
 
@@ -81,6 +92,14 @@ function RepoRow({ repo }: { repo: ProjectRepository }) {
         <Link to={`/repos/${repo.id}`} className="btn btn-outline">
           Explore code
         </Link>
+        <button
+          type="button"
+          className="btn btn-outline"
+          disabled={registerWebhookMutation.isPending}
+          onClick={() => registerWebhookMutation.mutate()}
+        >
+          {registerWebhookMutation.isPending ? 'Registering…' : 'Register Webhook'}
+        </button>
         <button
           type="button"
           className="btn btn-ghost text-rose-600"

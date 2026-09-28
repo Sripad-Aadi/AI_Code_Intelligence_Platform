@@ -37,6 +37,30 @@ export default function AppShell() {
             >
               Projects
             </NavLink>
+            <NavLink
+              to="/search"
+              className={({ isActive }) =>
+                isActive ? 'nav-link-active' : 'nav-link'
+              }
+            >
+              Search
+            </NavLink>
+            <NavLink
+              to="/observability"
+              className={({ isActive }) =>
+                isActive ? 'nav-link-active' : 'nav-link'
+              }
+            >
+              Observability
+            </NavLink>
+            <NavLink
+              to="/risk-training"
+              className={({ isActive }) =>
+                isActive ? 'nav-link-active' : 'nav-link'
+              }
+            >
+              Risk Training
+            </NavLink>
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm">
             {gh?.linked ? (
