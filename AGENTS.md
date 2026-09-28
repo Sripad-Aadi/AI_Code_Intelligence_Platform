@@ -198,11 +198,16 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   * exposes `dimensions` as a **method**, not a property (`v.dimensions()`).
   * therefore `arr = np.array([v.to_numpy() for v in rows])` is the shape of
     code to copy in Step 8.
-  Writes work by passing either a `list`/`numpy` array or the `[0.1, ...]`
-  **string** form — pgvector's implicit `text <-> vector` casts mean the
-  string form is fine, including as a bound param in `embedding <=> :qv`.
-  Cosine semantics check out on the live DB: distance to self = 0.000000,
-  to an orthogonal unit vector = 1.000000.
+  Pass a **`list`**, not text, whenever the value goes through SQLAlchemy's
+  typed bind param — i.e. `CodeEmbedding.embedding.cosine_distance(vec)`
+  (Step 8, `app/retrieval/search.py`). pgvector 0.5.0's `Vector._to_db`
+  accepts `list`/`ndarray`/`Vector` but **not `str`**: a `"[0.1, ...]"`
+  string there raises `ValueError: expected list or ndarray` at execute
+  time (verified 2026-09-28 — it 502'd the search endpoint until changed).
+  The string form is still fine for *raw* SQL / psycopg2 params, where
+  pgvector's implicit `text <-> vector` cast applies, and `_to_db` does the
+  list→text serialisation itself. Cosine semantics check out on the live
+  DB: distance to self = 0.000000, to an orthogonal unit vector = 1.000000.
 
 ## Supabase free-tier quirks
 
@@ -257,8 +262,15 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   structure: `GET /repos/{id}/files` (path/limit/offset), `GET /files/{file_id}`
   (file + its symbols), `GET /repos/{id}/symbols` (kind/name filters), and
   `GET /repos/{id}/edges?edge_type=imports|belongs_to` (file→file / symbol→file).
-  `chat`, `findings`, `search`, `pull_requests`, `webhooks` are placeholder
-  stubs for later steps and remain commented out in `app/main.py`. Step 7 adds
+  `search` (Step 8) and `observability` are mounted as well — `search_router`
+  is deliberately registered **before** `repos_router`, or `/repos/search`
+  would be swallowed by `/repos/{repo_id}`. `webhooks` is mounted but only
+  half-implemented. `chat`, `findings` and `pull_requests` have **no files at
+  all**: their 0-byte shells (plus the empty `agents/`, `parsing/` and
+  `risk_model/` packages, 21 files total) were deleted in the 2026-09-28
+  cleanup, so those frontend routes 404 until Steps 9/12/14 are written.
+  `ruff check` and `ruff format --check` are clean as of that pass — keep them
+  that way (34 pre-existing errors were fixed, not suppressed). Step 7 adds
   **no** endpoint — retrieval is Step 8's job; the only API surface that
   changed is `chunks_indexed` on the `AnalysisJobRead` schema.
 - Step 7 embeddings (`backend/app/embeddings/`): `chunker.py` is **pure stdlib**
