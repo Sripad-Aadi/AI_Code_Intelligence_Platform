@@ -93,6 +93,15 @@ class Settings(BaseSettings):
     # LLM Provider
     LLM_PROVIDER: str = Field(default="groq", description="LLM provider (groq|gemini)")
     GROQ_API_KEY: Optional[str] = Field(default=None, description="Groq API key")
+    LLM_MODEL: str = Field(
+        default="openai/gpt-oss-20b",
+        description=(
+            "Model id sent to the provider (Step 9 chat, Step 14 PR chain). "
+            "Default is on Groq's free tier; `openai/gpt-oss-120b` is the "
+            "one-line swap for more reasoning. Swapping models or providers "
+            "is a config edit, not a code change."
+        ),
+    )
 
     # Webhooks
     WEBHOOK_SECRET: Optional[str] = Field(

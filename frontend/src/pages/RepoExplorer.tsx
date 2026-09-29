@@ -224,6 +224,9 @@ export default function RepoExplorer() {
           <Link to={`/search?repo=${repoId}`} className="btn btn-outline">
             Search this repo
           </Link>
+          <Link to={`/repos/${repoId}/chat`} className="btn btn-outline">
+            Ask AI
+          </Link>
           <button
             type="button"
             className="btn btn-primary"

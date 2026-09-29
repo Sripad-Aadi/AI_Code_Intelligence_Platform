@@ -262,17 +262,19 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   structure: `GET /repos/{id}/files` (path/limit/offset), `GET /files/{file_id}`
   (file + its symbols), `GET /repos/{id}/symbols` (kind/name filters), and
   `GET /repos/{id}/edges?edge_type=imports|belongs_to` (file→file / symbol→file).
-  `search` (Step 8) and `observability` are mounted as well — `search_router`
-  is deliberately registered **before** `repos_router`, or `/repos/search`
-  would be swallowed by `/repos/{repo_id}`. `webhooks` is mounted but only
-  half-implemented. `chat`, `findings` and `pull_requests` have **no files at
-  all**: their 0-byte shells (plus the empty `agents/`, `parsing/` and
-  `risk_model/` packages, 21 files total) were deleted in the 2026-09-28
-  cleanup, so those frontend routes 404 until Steps 9/12/14 are written.
-  `ruff check` and `ruff format --check` are clean as of that pass — keep them
-  that way (34 pre-existing errors were fixed, not suppressed). Step 7 adds
-  **no** endpoint — retrieval is Step 8's job; the only API surface that
-  changed is `chunks_indexed` on the `AnalysisJobRead` schema.
+  `search` (Step 8), `chat` (Step 9) and `observability` are mounted as well —
+  `search_router` is deliberately registered **before** `repos_router`, or
+  `/repos/search` would be swallowed by `/repos/{repo_id}`. `webhooks` is
+  mounted but only half-implemented. `findings` and `pull_requests` have **no
+  files at all**: their 0-byte shells (plus the empty `parsing/` and
+  `risk_model/` packages) were deleted in the 2026-09-28 cleanup, so those
+  frontend routes 404 until Steps 12/14 are written, and `/risk/train` +
+  `/risk/evaluate` have no router either (Steps 11/15 — the RiskTraining page
+  *and* the Observability "Risk Model" card both call them).
+  `ruff check` and `ruff format --check` are clean — keep them that way (34
+  pre-existing errors were fixed, not suppressed). Step 7 adds **no**
+  endpoint — retrieval is Step 8's job; the only API surface that changed is
+  `chunks_indexed` on the `AnalysisJobRead` schema.
 - Step 7 embeddings (`backend/app/embeddings/`): `chunker.py` is **pure stdlib**
   (hermetic, 18 unit tests in `tests/test_chunking.py`) and does the chunking
   straight off the Step-5 symbol spans, so line metadata is the parser's own
@@ -304,6 +306,42 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   and committed again. The walk collects `file_ids_by_path: dict[str, UUID]`
   rather than ORM `SourceFile` objects on purpose — after the mid-task commit
   those objects are expired and every `.id` access would re-query.
+- Step 9 chat (`backend/app/agents/` → `app/api/chat.py`, `POST /chat`): a
+  LangChain tool-calling agent on Groq with the four tools the plan specifies,
+  built **per request** and closed over the repo id (no tool accepts a repo id
+  argument, every query filters on the bound `repo_id`), after
+  `_get_owned_repo` + `chat_rate_limit` (20/min/user). Gotchas, all measured:
+  - **Use a free-tier model.** The plan's `llama-3.3-70b-versatile` no longer
+    exists on Groq — the first live call died on `404 model_not_found` and
+    surfaced as an opaque 502. Default is `openai/gpt-oss-20b` via
+    `LLM_MODEL` (free tier; `openai/gpt-oss-120b` is the one-line swap for
+    more reasoning), and `_translate_provider_error` maps 404/401/429 →
+    503/503/429 naming the config to fix. Never hardcode a model id.
+  - **`disable_streaming=True` is load-bearing for Step 19**: Groq reports
+    token usage only on the *final* streamed chunk and `AgentExecutor` does
+    not carry it into `result["messages"]`, so the cost summary read
+    0 calls / 0 tokens after two real turns. We never stream to the client,
+    so disabling it costs nothing and `usage_metadata` lands on the message
+    itself (`_record_usage` still falls back to `response_metadata.token_usage`).
+  - `safe_clone_path()` in `agents/tools.py` is the untrusted-input guard:
+    the *model* supplies the `get_file` path, so `..`, absolute paths and
+    symlinks must never escape `CLONE_ROOT_DIR/<owner>/<name>`. Directory
+    paths there (and in `get_dependencies`) return a file listing, not a
+    miss — the old "call search_code" miss text looped search → miss →
+    search to force-stop.
+  - Small-model reality (`gpt-oss-20b`, measured): it garbles tool-call JSON
+    (`{"query":"tsx",""}` → Groq 400 `tool_use_failed`), so `run_chat`
+    retries once on 400 and otherwise answers via `_answer_from_evidence()`
+    — one direct retrieval + one tool-free completion under `FALLBACK_PROMPT`
+    (same cite-or-admit contract; cannot 400 or loop). `MAX_ITERATIONS` is 6
+    for the same reason; longer chains are looping. `_sanitize_answer()`
+    cuts leaked Harmony prologues (`assistant to=...<|channel|>...`) from
+    final text — observed verbatim in a 200 response.
+  - `Chat.tsx` reads `msg.evidence` (evidence travels with its message), not
+    `mutation.data`, which made every older bubble show the newest sources.
+  - Verified live: grounded answers cite `path:start-end` accurately, and the
+    refusal path holds — "how does authentication work?" against a repo with
+    no auth returns an honest "could not find" (evidence was README + React).
 - Step 6 frontend (`frontend/`, Vite 8 + React 19 + TS 6): `src/api/client.ts`
   is the typed fetch client (Bearer JWT from `localStorage`, 401 clears it,
   `VITE_API_BASE` default `http://localhost:8000`), `src/api/types.ts` mirrors
@@ -372,6 +410,3 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   and calls `db.commit()` *inside* the try so a commit-time failure is recorded
   on the job (the `db_session()` context manager commits in `__exit__`, which is
   outside the task's try and would otherwise leave the job stuck `queued`).
-- Frontend `src/pages/*`, `src/api/client.ts`, `src/hooks/useJobStatus.ts` are
-  empty; react-router, react-query, and tailwind are not installed (needed at
-  Step 6).

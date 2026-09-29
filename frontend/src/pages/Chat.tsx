@@ -39,9 +39,14 @@ function EvidencePanel({ evidence }: { evidence: EvidenceChunk[] }) {
   )
 }
 
+/** A turn as the page stores it: the message plus the sources that backed it. */
+type ChatTurn = ChatMessage & { evidence?: EvidenceChunk[] }
+
 export default function Chat() {
   const { repoId } = useParams()
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  // Evidence rides with the message it belongs to: reading it off
+  // `mutation.data` gave every assistant bubble the *latest* run's sources.
+  const [messages, setMessages] = useState<ChatTurn[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
 
@@ -53,7 +58,7 @@ export default function Chat() {
     onSuccess: (data) => {
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: data.answer },
+        { role: 'assistant', content: data.answer, evidence: data.evidence },
       ])
     },
     onError: (err: Error) => {
@@ -116,9 +121,9 @@ export default function Chat() {
                 >
                   <p className="whitespace-pre-wrap">{msg.content}</p>
                 </div>
-                {/* Evidence panel for assistant messages */}
-                {msg.role === 'assistant' && mutation.data?.evidence && (
-                  <EvidencePanel evidence={mutation.data.evidence} />
+                {/* Evidence panel for this assistant message */}
+                {msg.role === 'assistant' && msg.evidence && (
+                  <EvidencePanel evidence={msg.evidence} />
                 )}
               </div>
             ))

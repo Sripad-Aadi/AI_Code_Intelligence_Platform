@@ -112,12 +112,10 @@ def create_rate_limiter(
             window_seconds=window_seconds,
         )
         if not allowed:
+            window = f"{max_requests} req/{window_seconds}s"
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=(
-                    f"Rate limit exceeded for {endpoint} "
-                    f"({max_requests} req/{window_seconds}s)"
-                ),
+                detail=f"Rate limit exceeded for {endpoint} ({window})",
                 headers={"Retry-After": str(window_seconds)},
             )
         request.state.rate_limit_remaining = remaining

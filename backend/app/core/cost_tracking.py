@@ -13,9 +13,13 @@ from uuid import UUID
 
 log = logging.getLogger(__name__)
 
-# Model pricing (USD per 1M tokens) - approximate as of 2024
+# Model pricing (USD per 1M tokens), the provider's list price. A free-tier
+# Groq key bills $0 regardless — this is what the same call would cost paid.
 MODEL_PRICING = {
-    # Groq models
+    # Groq models (rates from console.groq.com/docs/models)
+    "openai/gpt-oss-20b": {"input": 0.075, "output": 0.30},
+    "openai/gpt-oss-120b": {"input": 0.15, "output": 0.60},
+    "qwen/qwen3.8-27b": {"input": 0.80, "output": 4.00},
     "llama-3.3-70b-versatile": {"input": 0.59, "output": 0.79},
     "llama-3.1-70b-versatile": {"input": 0.59, "output": 0.79},
     "llama-3.1-8b-instant": {"input": 0.05, "output": 0.08},
@@ -116,8 +120,15 @@ def get_cost_tracker() -> CostTracker:
 
 
 def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
-    """Calculate estimated cost for a model call."""
-    pricing = MODEL_PRICING.get(model, {"input": 0.0, "output": 0.0})
+    """Estimated cost of one call in USD.
+
+    An unknown model would otherwise be a *silent* zero, so it is logged —
+    a cost summary stuck at $0.00 should be diagnosable from the log.
+    """
+    pricing = MODEL_PRICING.get(model)
+    if pricing is None:
+        log.warning("no pricing entry for model %r; cost recorded as 0", model)
+        pricing = {"input": 0.0, "output": 0.0}
     input_cost = (input_tokens / 1_000_000) * pricing["input"]
     output_cost = (output_tokens / 1_000_000) * pricing["output"]
     return round(input_cost + output_cost, 6)
