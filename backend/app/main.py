@@ -13,6 +13,7 @@ from app.api import (
     ingestion_router,
     observability_router,
     projects_router,
+    pull_requests_router,
     repos_router,
     risk_router,
     search_router,
@@ -64,13 +65,9 @@ app.include_router(chat_router)
 app.include_router(findings_router)
 app.include_router(risk_router)
 app.include_router(projects_router)
+app.include_router(pull_requests_router)
 app.include_router(repos_router)
 app.include_router(ingestion_router)
 app.include_router(analysis_router)
 app.include_router(observability_router)
 app.include_router(webhooks_router)
-
-# Not mounted yet — these have no endpoint file (their 0-byte scaffold was
-# deleted in the 2026-09-28 cleanup), so implementing Step 14 means writing
-# it first:
-#   app/api/pull_requests.py  (Step 14)

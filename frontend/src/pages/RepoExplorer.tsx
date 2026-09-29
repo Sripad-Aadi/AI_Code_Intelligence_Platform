@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   getFileWithSymbols,
   listAttachedRepos,
+  listPullRequests,
   listRepoEdges,
   listRepoFiles,
   listRepoJobs,
@@ -15,7 +16,7 @@ import type { SourceFile, SymbolKind, FileWithSymbols } from '../api/types'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { isJobRunning, statusStyle } from '../hooks/useJobStatus'
 
-type Tab = 'files' | 'symbols' | 'imports'
+type Tab = 'files' | 'symbols' | 'imports' | 'pulls'
 
 interface TreeNode {
   name: string
@@ -147,6 +148,12 @@ export default function RepoExplorer() {
     queryFn: () => getFileWithSymbols(selectedFileId as string),
     enabled: Boolean(selectedFileId),
   })
+  const pulls = useQuery({
+    queryKey: ['repo-pulls', repoId],
+    queryFn: () => listPullRequests(repoId as string, 'open'),
+    enabled: tab === 'pulls',
+  })
+  const [prNumber, setPrNumber] = useState('')
 
   const symbolRows = symbols.data ?? []
   const edgeRows = edges.data ?? []
@@ -247,6 +254,7 @@ export default function RepoExplorer() {
         {tabBtn('files', 'Files')}
         {tabBtn('symbols', `Symbols${symbols.data ? ` (${symbols.data.length})` : ''}`)}
         {tabBtn('imports', `Imports${edges.data ? ` (${edges.data.length})` : ''}`)}
+        {tabBtn('pulls', `Pull requests${pulls.data ? ` (${pulls.data.length})` : ''}`)}
       </nav>
 
       {tab === 'files' ? (
@@ -407,6 +415,70 @@ export default function RepoExplorer() {
                 </tbody>
               </table>
             </div>
+          )}
+        </div>
+      ) : null}
+
+      {tab === 'pulls' ? (
+        <div className="card overflow-hidden">
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
+            <span className="text-xs text-slate-500">
+              Analyze a pull request for impacted components, risk and tests.
+            </span>
+            <form
+              className="ml-auto flex items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault()
+                const n = parseInt(prNumber, 10)
+                if (Number.isFinite(n) && n > 0) {
+                  navigate(`/repos/${repoId}/prs/${n}`)
+                }
+              }}
+            >
+              <input
+                value={prNumber}
+                onChange={(e) => setPrNumber(e.target.value)}
+                placeholder="PR #"
+                inputMode="numeric"
+                className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs"
+              />
+              <button type="submit" className="btn btn-outline btn-sm">
+                Analyze PR
+              </button>
+            </form>
+          </div>
+          {pulls.isLoading ? (
+            <p className="p-3 text-sm text-slate-400">Loading pull requests…</p>
+          ) : pulls.isError ? (
+            <p className="p-3 text-sm text-rose-600">
+              {(pulls.error as Error).message}
+            </p>
+          ) : !pulls.data || pulls.data.length === 0 ? (
+            <p className="p-3 text-sm text-slate-400">
+              No open pull requests. Enter a PR number above to analyze any PR.
+            </p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {pulls.data.map((pr) => (
+                <li key={pr.number} className="px-4 py-2 flex items-center gap-3">
+                  <span className="font-mono text-xs font-semibold text-indigo-700">
+                    #{pr.number}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-slate-700">
+                    {pr.title}
+                  </span>
+                  <span className="font-mono text-xs text-slate-400">
+                    {pr.head_ref} → {pr.base_ref}
+                  </span>
+                  <Link
+                    to={`/repos/${repoId}/prs/${pr.number}`}
+                    className="btn btn-outline btn-sm"
+                  >
+                    Analyze
+                  </Link>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       ) : null}

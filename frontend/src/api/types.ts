@@ -216,6 +216,17 @@ export interface PRAnalysisResult {
   high_risk_symbols: number
   medium_risk_symbols: number
   low_risk_symbols: number
+  summary: string
+  key_risks: string[]
+}
+
+export interface PullRequestSummary {
+  number: number
+  title: string
+  state: string | null
+  head_ref: string | null
+  base_ref: string | null
+  html_url: string | null
 }
 
 // --- Observability (Step 19) ---

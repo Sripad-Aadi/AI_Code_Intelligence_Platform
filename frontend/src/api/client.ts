@@ -17,6 +17,7 @@ import type {
   Project,
   ProjectRepository,
   ProjectWithRepos,
+  PullRequestSummary,
   RiskFindingListResponse,
   RiskLevel,
   SearchResponse,
@@ -239,6 +240,9 @@ export const getFindingsSummary = (repoId: string) =>
 
 export const getPRAnalysis = (repoId: string, prNumber: number) =>
   apiFetch<PRAnalysisResult>(`/repos/${repoId}/prs/${prNumber}/analysis`)
+
+export const listPullRequests = (repoId: string, state = 'open') =>
+  apiFetch<PullRequestSummary[]>(`/repos/${repoId}/pulls?state=${state}`)
 
 // --- Observability (Step 19) ---
 

@@ -1,16 +1,31 @@
 """Step 14 — PR analysis chain.
 
-Combines diff fetch → impact analysis → risk scores into a structured
-Pydantic output for the frontend PR dashboard.
+Combines diff fetch → impact analysis → risk scores → LLM summary into a
+structured Pydantic output for the frontend PR dashboard.
+
+The LLM step is deliberately *not* a tool-calling agent (unlike chat): the
+evidence is already assembled deterministically above, so the model gets one
+tool-free completion under a JSON contract. That path cannot 400 on
+malformed tool calls or loop to force-stop — the two failure modes that
+made chat need a fallback. If the provider call fails, the structural
+analysis still returns; only the summary degrades.
 """
 
+import json
 import logging
+import re
+import time
 from typing import List, Optional
 from uuid import UUID
 
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_groq import ChatGroq
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
+from app.agents.chat_chain import _sanitize_answer
+from app.config import settings
+from app.core.cost_tracking import LLMUsage, calculate_cost, get_cost_tracker
 from app.models.repository import ProjectRepository
 from app.pr_analysis.diff import ChangedFile, fetch_pr_diff
 from app.pr_analysis.impact import ImpactResult, analyze_pr_impact
@@ -62,6 +77,146 @@ class PRAnalysisResult(BaseModel):
     medium_risk_symbols: int
     low_risk_symbols: int
 
+    # LLM impact summary (Step 14 chain output; empty when ungenerated)
+    summary: str = ""
+    key_risks: List[str] = []
+
+
+class PRSummary(BaseModel):
+    """Structured LLM verdict: what this PR does and what to watch.
+
+    The model answers in JSON under this schema (validated, never parsed
+    by hand into the response) so the frontend receives consistent fields
+    instead of free text to parse — the plan's requirement.
+    """
+
+    summary_markdown: str
+    key_risks: List[str] = []
+
+
+SUMMARY_SYSTEM = """\
+You review a pull request from its diff highlights, changed symbols, affected
+files and risk scores. Reply with a single JSON object and nothing else:
+{"summary_markdown": "<2-4 sentence overview plus what to review carefully>",
+"key_risks": ["<at most 5 short risk bullets>"]}.
+Rules: only describe what the evidence shows; cite file paths you were given;
+if the evidence is thin, say so instead of inventing impact; keep key_risks
+empty when nothing stands out.
+"""
+
+
+def _extract_json(text: str) -> dict:
+    """Parse the model's JSON, tolerating fences and stray prose."""
+    cleaned = text.strip()
+    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, re.DOTALL)
+    if match:
+        cleaned = match.group(1)
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start == -1 or end <= start:
+            raise
+        parsed = json.loads(cleaned[start : end + 1])
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _prompt_context(
+    pr_title: str,
+    pr_body: str,
+    changed_files: List[ChangedFile],
+    impact: ImpactResult,
+    max_files: int = 20,
+) -> str:
+    """Bounded evidence text for the summary call (never the full diff)."""
+    lines = [f"PR title: {pr_title}", f"PR body: {(pr_body or '')[:800]}"]
+    for changed in changed_files[:max_files]:
+        hunks = []
+        for hunk in changed.hunks[:2]:
+            hunks.append("\n".join(hunk.lines[:40]))
+        lines.append(f"--- {changed.file_path} ({changed.status})\n" + "\n".join(hunks))
+    for symbol in impact.changed_symbols[:30]:
+        risk = impact.risk_scores.get(str(symbol.symbol_id), {})
+        lines.append(
+            f"symbol: {symbol.symbol_kind} {symbol.symbol_name} "
+            f"in {symbol.file_path}:{symbol.start_line}-{symbol.end_line} "
+            f"risk={risk.get('risk_level', 'unknown')} "
+            f"({risk.get('probability', 0)})"
+        )
+    for affected in impact.affected_files[:30]:
+        lines.append(
+            f"affected: {affected['file_path']} "
+            f"({affected['reason']} via {affected['via_symbol']})"
+        )
+    lines.append(f"tests: {', '.join(impact.test_files[:20]) or '(none found)'}")
+    return "\n".join(lines)[:8000]
+
+
+def summarize_impact(
+    repo_id: UUID,
+    pr_title: str,
+    pr_body: str,
+    changed_files: List[ChangedFile],
+    impact: ImpactResult,
+) -> PRSummary:
+    """One tool-free Groq completion over assembled evidence.
+
+    Raises RuntimeError with a clear cause when the key is missing or the
+    provider fails — the caller degrades to structural-only output.
+    """
+    if settings.LLM_PROVIDER.lower() != "groq" or not settings.GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY is not configured, skipping PR summary")
+    llm = ChatGroq(
+        model=(settings.LLM_MODEL or "openai/gpt-oss-20b").strip()
+        or "openai/gpt-oss-20b",
+        groq_api_key=settings.GROQ_API_KEY,
+        temperature=0,
+        timeout=30,
+        max_retries=1,
+        disable_streaming=True,
+    )
+    started = time.perf_counter()
+    message = llm.invoke(
+        [
+            SystemMessage(content=SUMMARY_SYSTEM),
+            HumanMessage(
+                content=_prompt_context(pr_title, pr_body, changed_files, impact)
+                + "\n\nReply with the JSON object only."
+            ),
+        ]
+    )
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    content = message.content if isinstance(message.content, str) else ""
+    try:
+        parsed = PRSummary(**_extract_json(content))
+    except Exception:
+        log.warning("PR summary was not valid JSON; keeping raw text")
+        parsed = PRSummary(
+            summary_markdown=_sanitize_answer(content.strip()),
+            key_risks=[],
+        )
+    meta = getattr(message, "usage_metadata", None) or {}
+    try:
+        get_cost_tracker().record(
+            LLMUsage(
+                model=llm.model_name,
+                provider=settings.LLM_PROVIDER,
+                input_tokens=int(meta.get("input_tokens") or 0),
+                output_tokens=int(meta.get("output_tokens") or 0),
+                latency_ms=latency_ms,
+                estimated_cost_usd=calculate_cost(
+                    llm.model_name,
+                    int(meta.get("input_tokens") or 0),
+                    int(meta.get("output_tokens") or 0),
+                ),
+                repo_id=repo_id,
+            )
+        )
+    except Exception:
+        log.exception("could not record PR summary usage")
+    return parsed
+
 
 def _impact_to_output(
     repo_id: UUID,
@@ -69,6 +224,7 @@ def _impact_to_output(
     pr_title: str,
     changed_files: List[ChangedFile],
     impact: ImpactResult,
+    summary: Optional[PRSummary] = None,
 ) -> PRAnalysisResult:
     """Convert ImpactResult to structured API output."""
     changed_symbols_out = []
@@ -121,6 +277,8 @@ def _impact_to_output(
         high_risk_symbols=high,
         medium_risk_symbols=medium,
         low_risk_symbols=low,
+        summary=summary.summary_markdown if summary is not None else "",
+        key_risks=list(summary.key_risks) if summary is not None else [],
     )
 
 
@@ -168,14 +326,25 @@ async def run_pr_analysis(
             high_risk_symbols=0,
             medium_risk_symbols=0,
             low_risk_symbols=0,
+            summary="",
+            key_risks=[],
         )
 
     # Step 2: Impact analysis
     log.info("Running impact analysis for PR #%d", pr_number)
     impact = analyze_pr_impact(db, repo_id, changed_files)
 
-    # Step 3: Convert to output
-    return _impact_to_output(repo_id, pr_number, pr_title, changed_files, impact)
+    # Step 3: LLM summary over assembled evidence (degrades, never fails)
+    summary: Optional[PRSummary] = None
+    try:
+        summary = summarize_impact(repo_id, pr_title, pr_body, changed_files, impact)
+    except Exception as exc:
+        log.warning("PR summary skipped (structural output kept): %s", exc)
+
+    # Step 4: Convert to output
+    return _impact_to_output(
+        repo_id, pr_number, pr_title, changed_files, impact, summary
+    )
 
 
 def run_pr_analysis_sync(

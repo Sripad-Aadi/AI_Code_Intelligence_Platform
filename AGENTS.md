@@ -267,9 +267,10 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   `observability` are mounted as well — `search_router` is deliberately
   registered **before** `repos_router`, or `/repos/search` would be swallowed
   by `/repos/{repo_id}`. `webhooks` is mounted but only
-  half-implemented. `pull_requests` has **no file at all**: its 0-byte shell
-  (plus the empty `parsing/` package) was deleted in the 2026-09-28 cleanup,
-  so that frontend route 404s until Step 14 is written.
+  half-implemented. All product routers are mounted now (`pull_requests` was
+  the last one); only Step 13 (webhook verification), Step 16 (incremental
+  indexing) and the Step 17/18 hardening beyond rate limits + timeouts remain
+  open.
   `ruff check` and `ruff format --check` are clean — keep them that way (34
   pre-existing errors were fixed, not suppressed). Step 7 adds **no**
   endpoint — retrieval is Step 8's job; the only API surface that changed is
@@ -362,6 +363,17 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
     repo); findings rows carry symbol/file context via join because the page
     rendered raw UUIDs before. Findings pagination needed `setSearchParams`
     (`searchParams.set` mutates silently — buttons were dead).
+- Step 14 PRs (`backend/app/pr_analysis/chain.py`, `GET
+  /repos/{id}/pulls`, `GET /repos/{id}/prs/{n}/analysis`): the chain is
+  diff → impact → risk → *one tool-free Groq completion* under a validated
+  JSON schema (`PRSummary`: summary_markdown + key_risks) — no tool agent,
+  so the chat failure modes (400 tool_use_failed, re-search looping) cannot
+  occur; on provider failure the structural analysis returns with an empty
+  summary. Computed on demand, unpersisted (derived data; the Celery task
+  covers webhooks). 10 req/min per Step 18. Measured: dead stored GitHub
+  tokens 401, so 401/403 from GitHub map to 409 "re-link GitHub", and the
+  pulls tab + dashboard render that guidance. `get_pull_request` /
+  `list_pull_requests` live in `services/github.py` (15 s timeouts).
 - Step 6 frontend (`frontend/`, Vite 8 + React 19 + TS 6): `src/api/client.ts`
   is the typed fetch client (Bearer JWT from `localStorage`, 401 clears it,
   `VITE_API_BASE` default `http://localhost:8000`), `src/api/types.ts` mirrors

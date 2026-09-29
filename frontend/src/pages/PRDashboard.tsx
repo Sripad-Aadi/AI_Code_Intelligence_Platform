@@ -124,7 +124,28 @@ export default function PRDashboard() {
             </div>
           </div>
 
-          {/* Changed Symbols with Risk */}
+          {/* AI Summary */}
+      {(analysis.data.summary || analysis.data.key_risks.length > 0) && (
+        <div className="card p-4">
+          <h2 className="label mb-2">AI Impact Summary</h2>
+          {analysis.data.summary && (
+            <p className="text-sm text-slate-700 whitespace-pre-line">
+              {analysis.data.summary}
+            </p>
+          )}
+          {analysis.data.key_risks.length > 0 && (
+            <ul className="mt-2 list-disc pl-5 space-y-1">
+              {analysis.data.key_risks.map((risk, i) => (
+                <li key={i} className="text-sm text-slate-700">
+                  {risk}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Changed Symbols with Risk */}
           <div className="card overflow-hidden">
             <h2 className="label px-4 pt-4">Changed Symbols (with Risk Scores)</h2>
             <div className="overflow-x-auto">

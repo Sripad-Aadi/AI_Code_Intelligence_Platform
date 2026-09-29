@@ -124,25 +124,35 @@ findings:
   UUIDs — all fixed. `benchmarks/risk_eval.py` imports the real module now
   and measures the saved split instead of `randn`.
 
-**Still unwired (Step 14)** — frontend calls with no backend endpoint:
+**Step 14 implemented (2026-09-29, fix pass 5)** — PR impact analysis:
 
-- PR analysis (`/repos/:repoId/prs/{pr}/analysis`): no `pull_requests` router
-  and `pr_analysis/chain.py` still has no LLM call.
-- Slack alerting from the Celery task on job failure is written but was not
-  exercised in this pass.
+- `GET /repos/{id}/pulls` (open-PR list) + `GET /repos/{id}/prs/{n}/analysis`
+  (ownership + 10 req/min rate limit per Step 18), computed on demand: PR
+  metadata + diff from GitHub, symbol mapping, 1-hop affected files, test
+  heuristic, risk scores from the findings table, then the LLM summary —
+  one tool-free Groq completion under a validated JSON schema
+  (`summary_markdown` + `key_risks`), cost-tracked. No new table: the result
+  is derived data (the Celery task already covers the webhook flow).
+- The summary degrades, never fails: no key or provider error keeps the
+  structural analysis with an empty summary. Dead stored token (GitHub 401)
+  is 409 "re-link GitHub", not 502.
+- RepoExplorer gained a Pull requests tab (open PRs + manual number entry —
+  the dashboard route had no entry point); PRDashboard gained the AI summary
+  card. Its table already matched the contract; its pagination-style dead
+  code was not present here.
+- Verified: real-DB impact (Contact/Navbar → App.jsx/Layout.jsx 1-hop),
+  real risk scores, real Groq summary with cites; browser pulls tab +
+  dashboard error states. Full click-through needs a live GitHub token —
+  the stored one 401s, so re-link on the dashboard first.
 
-**Skeleton / not verified (Steps 13–19)** — routes registered in the frontend,
-partial work in the backend:
+**Skeleton / not verified (Steps 13, 16–19)** — partial work in the backend:
 
-- Step 14: `pr_analysis/chain.py` has no LLM call, `tasks/analyze_pr.py`
-  persists nothing, and there is no `pull_requests` table (its router was an
-  empty shell and has been deleted).
 - `app/api/webhooks.py` is mounted but half-implemented and `core/encryption.py`
   is unused (GitHub tokens are still plaintext) — neither has been run or
-  proven. `core/cost_tracking.py` **is** fed now (Step 9 chat records usage
-  every turn) but is in-memory, so totals reset when the API restarts.
-- `benchmarks/risk_eval.py` imports `app.risk_model.train`, which was an empty
-  shell, so it still cannot import (Step 15 does not exist yet).
+  proven. `core/cost_tracking.py` **is** fed now (chat + PR summary record
+  usage every call) but is in-memory, so totals reset when the API restarts.
+- Step 16 (incremental indexing) and the Step 17/18 hardening beyond
+  rate limits + timeouts are not implemented.
 
 **Cleanup (fix pass 2, 2026-09-28)**:
 
@@ -165,9 +175,9 @@ partial work in the backend:
 ```
 backend/
   app/
-    main.py          # FastAPI entrypoint (mounts 11 routers: auth, search, chat,
-                     # findings, risk, projects, repos, ingestion, analysis,
-                     # webhooks — observability, webhooks)
+    main.py          # FastAPI entrypoint (mounts 12 routers: auth, search, chat,
+                     # findings, risk, pull_requests, projects, repos,
+                     # ingestion, analysis, observability, webhooks)
     config.py        # pydantic settings (DATABASE_URL, REDIS_URL, UPSTASH_TOKEN,
                      # SUPABASE_URL, SUPABASE_SERVICE_KEY, GITHUB_CLIENT_ID/SECRET,
                      # CLONE_ROOT_DIR, EMBEDDING_*, LLM_PROVIDER/LLM_MODEL)
@@ -202,7 +212,7 @@ frontend/
     hooks/           # useJobStatus (TanStack polling)
     pages/           # Login, Dashboard, ProjectDetail, AnalysisStatus,
                      #          RepoExplorer, Search, Observability, Chat, Findings,
-                     #          RiskTraining (working); PRDashboard (no endpoint)
+                     #          RiskTraining, PRDashboard (working)
     components/      # AppShell, LinkGithub
 ```
 

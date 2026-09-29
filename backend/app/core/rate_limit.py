@@ -72,6 +72,29 @@ async def chat_rate_limit(
     return current_user
 
 
+# PR analysis endpoint: 10 requests/minute per user (heavier than chat:
+# GitHub diff fetch + embeddings + one LLM summary per call).
+async def pr_analysis_rate_limit(
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user),
+) -> CurrentUser:
+    """Rate limit: 10 requests/minute for the PR analysis endpoint."""
+    allowed, remaining = check_rate_limit(
+        user_id=str(current_user.id),
+        endpoint="pr_analysis",
+        max_requests=10,
+        window_seconds=60,
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="PR analysis rate limit exceeded (10 req/min). Please wait.",
+            headers={"Retry-After": "60"},
+        )
+    request.state.rate_limit_remaining = remaining
+    return current_user
+
+
 # PR analysis webhook: 50 requests/minute per repo (webhook bursts)
 async def pr_webhook_rate_limit(
     request: Request,

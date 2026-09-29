@@ -133,6 +133,62 @@ def get_branch_default_sha(
         return None
 
 
+def get_pull_request(
+    access_token: str, owner: str, repo_name: str, number: int
+) -> Dict[str, Any]:
+    """Fetch one PR (GET /repos/{owner}/{repo}/pulls/{n}) — slim projection."""
+    with httpx.Client(timeout=15.0) as client:
+        resp = client.get(
+            f"{GITHUB_API_BASE}/repos/{owner}/{repo_name}/pulls/{number}",
+            headers={**_api_headers, "Authorization": f"Bearer {access_token}"},
+        )
+        resp.raise_for_status()
+        pr = resp.json()
+    head = pr.get("head") or {}
+    base = pr.get("base") or {}
+    return {
+        "number": pr["number"],
+        "title": pr.get("title") or "",
+        "body": pr.get("body") or "",
+        "state": pr.get("state"),
+        "head_sha": (head.get("sha") or ""),
+        "base_sha": (base.get("sha") or ""),
+        "head_ref": head.get("ref"),
+        "base_ref": base.get("ref"),
+        "html_url": pr.get("html_url"),
+    }
+
+
+def list_pull_requests(
+    access_token: str, owner: str, repo_name: str, state: str = "open"
+) -> List[Dict[str, Any]]:
+    """List PRs (GET /repos/{owner}/{repo}/pulls) — slim projection."""
+    with httpx.Client(timeout=15.0) as client:
+        resp = client.get(
+            f"{GITHUB_API_BASE}/repos/{owner}/{repo_name}/pulls",
+            headers={**_api_headers, "Authorization": f"Bearer {access_token}"},
+            params={
+                "state": state,
+                "per_page": 30,
+                "sort": "updated",
+                "direction": "desc",
+            },
+        )
+        resp.raise_for_status()
+        pulls: List[Dict[str, Any]] = resp.json()
+    return [
+        {
+            "number": pr["number"],
+            "title": pr.get("title") or "",
+            "state": pr.get("state"),
+            "head_ref": (pr.get("head") or {}).get("ref"),
+            "base_ref": (pr.get("base") or {}).get("ref"),
+            "html_url": pr.get("html_url"),
+        }
+        for pr in pulls
+    ]
+
+
 async def register_webhook_on_repo(
     access_token: str,
     owner: str,
