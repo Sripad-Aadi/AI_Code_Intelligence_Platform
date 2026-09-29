@@ -25,6 +25,13 @@ logs*
 backend/.clones/
 .clones/
 
+# Trained risk artifacts (Step 11): model/scaler/test-split/meta are rebuilt
+# by POST /risk/train on every checkout, so they never belong in git.
+backend/app/risk_model/artifacts/*.pkl
+backend/app/risk_model/artifacts/*.npz
+backend/app/risk_model/artifacts/meta.json
+backend/app/risk_model/artifacts/evaluation.json
+
 # Misc
 .DS_Store
 

@@ -9,10 +9,12 @@ from app.api import (
     analysis_router,
     auth_router,
     chat_router,
+    findings_router,
     ingestion_router,
     observability_router,
     projects_router,
     repos_router,
+    risk_router,
     search_router,
     webhooks_router,
 )
@@ -59,6 +61,8 @@ def health_check():
 app.include_router(auth_router)
 app.include_router(search_router)
 app.include_router(chat_router)
+app.include_router(findings_router)
+app.include_router(risk_router)
 app.include_router(projects_router)
 app.include_router(repos_router)
 app.include_router(ingestion_router)
@@ -67,7 +71,6 @@ app.include_router(observability_router)
 app.include_router(webhooks_router)
 
 # Not mounted yet — these have no endpoint file (their 0-byte scaffold was
-# deleted in the 2026-09-28 cleanup), so implementing Steps 12 and 14 means
-# writing them first:
-#   app/api/findings.py       (Step 12)
+# deleted in the 2026-09-28 cleanup), so implementing Step 14 means writing
+# it first:
 #   app/api/pull_requests.py  (Step 14)

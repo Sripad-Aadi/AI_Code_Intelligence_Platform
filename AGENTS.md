@@ -170,11 +170,12 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   (already done).
 - Autogenerate works: `alembic/env.py` imports `app.models`, so `Base.metadata`
   is populated and real migrations are produced (verified while generating the
-  `analysis_jobs` table). Applied head: `d7c86d75d7b7` (add code_embeddings +
-  `analysis_jobs.chunks_indexed`), previous: `a6dac032b9b5` (add structural
-  analysis tables), before that: `79b4d93cb86f` (add analysis_jobs), then
+  `analysis_jobs` table). Applied head: `217015d9942a` (add risk_findings),
+  previous: `d7c86d75d7b7` (add code_embeddings +
+  `analysis_jobs.chunks_indexed`), before that: `a6dac032b9b5` (add structural
+  analysis tables), then `79b4d93cb86f` (add analysis_jobs), then
   `12097b55786a` (users GitHub columns). `alembic current` =
-  `d7c86d75d7b7 (head)`. The `symbols_indexed` and `chunks_indexed` add_columns
+  `217015d9942a (head)`. The `symbols_indexed` and `chunks_indexed` add_columns
   carry `server_default='0'` (existing analysis_jobs rows would otherwise fail
   the NOT NULL ALTER).
 - **pgvector is already enabled** on this Supabase project (verified 2026-09-27:
@@ -262,15 +263,13 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   structure: `GET /repos/{id}/files` (path/limit/offset), `GET /files/{file_id}`
   (file + its symbols), `GET /repos/{id}/symbols` (kind/name filters), and
   `GET /repos/{id}/edges?edge_type=imports|belongs_to` (file→file / symbol→file).
-  `search` (Step 8), `chat` (Step 9) and `observability` are mounted as well —
-  `search_router` is deliberately registered **before** `repos_router`, or
-  `/repos/search` would be swallowed by `/repos/{repo_id}`. `webhooks` is
-  mounted but only half-implemented. `findings` and `pull_requests` have **no
-  files at all**: their 0-byte shells (plus the empty `parsing/` and
-  `risk_model/` packages) were deleted in the 2026-09-28 cleanup, so those
-  frontend routes 404 until Steps 12/14 are written, and `/risk/train` +
-  `/risk/evaluate` have no router either (Steps 11/15 — the RiskTraining page
-  *and* the Observability "Risk Model" card both call them).
+  `search` (Step 8), `chat` (Step 9), `findings` + `risk` (Steps 11–12) and
+  `observability` are mounted as well — `search_router` is deliberately
+  registered **before** `repos_router`, or `/repos/search` would be swallowed
+  by `/repos/{repo_id}`. `webhooks` is mounted but only
+  half-implemented. `pull_requests` has **no file at all**: its 0-byte shell
+  (plus the empty `parsing/` package) was deleted in the 2026-09-28 cleanup,
+  so that frontend route 404s until Step 14 is written.
   `ruff check` and `ruff format --check` are clean — keep them that way (34
   pre-existing errors were fixed, not suppressed). Step 7 adds **no**
   endpoint — retrieval is Step 8's job; the only API surface that changed is
@@ -342,6 +341,27 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   - Verified live: grounded answers cite `path:start-end` accurately, and the
     refusal path holds — "how does authentication work?" against a repo with
     no auth returns an honest "could not find" (evidence was README + React).
+- Step 10–12 risk (`backend/app/risk_model/` → `app/api/risk.py`,
+  `app/api/findings.py`, `POST /risk/train`, `POST /risk/evaluate`,
+  `GET /repos/{id}/findings[/summary]`): weak-supervision baseline, and the
+  docs are honest that it is one — CodeSearchNet was rejected (2M code/NL
+  pairs, zero risk labels), public defect sets are binary/C++-heavy, so v1
+  distills documented heuristics (complexity/LOC/fan/test/churn →
+  low/medium/high) with a seeded synthetic top-up to 50/class through the
+  *same* feature+label code (tests assert every synthetic lands intended).
+  Gotchas, all measured:
+  - Input layout is `[emb768 | eng6]` and only the tail is scaled — the eval
+    split is saved **unscaled** and each consumer scales once. Saving it
+    scaled made `/risk/evaluate` disagree with train's own numbers.
+  - `radon` is a real import now (declared `radon==6.0.1`); `langchain` too.
+  - Artifacts (`model.pkl`, `scaler.pkl`, `test_split.npz`, `meta.json`)
+    live in `risk_model/artifacts/` and are gitignored — fresh checkouts
+    409 on evaluate until first train. Names (`MODEL_PATH`, `RISK_LABELS`,
+    …) are load-bearing: the Step 19 `risk_eval.py` harness imports them.
+  - Train also scores its repos into `risk_findings` (delete-then-insert per
+    repo); findings rows carry symbol/file context via join because the page
+    rendered raw UUIDs before. Findings pagination needed `setSearchParams`
+    (`searchParams.set` mutates silently — buttons were dead).
 - Step 6 frontend (`frontend/`, Vite 8 + React 19 + TS 6): `src/api/client.ts`
   is the typed fetch client (Bearer JWT from `localStorage`, 401 clears it,
   `VITE_API_BASE` default `http://localhost:8000`), `src/api/types.ts` mirrors

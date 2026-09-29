@@ -89,17 +89,45 @@ exercised in a browser against a live API:
   fallback covers them.
 - `RepoExplorer` gained an "Ask AI" link — `/repos/:id/chat` had no entry
   point anywhere in the UI.
+- Chat's clone reader used the wrong layout (`CLONE_ROOT_DIR/owner/name`)
+  and silently fell back to chunks every time; the real layout is
+  `<project_id>/<owner>__<name>`, now shared via `risk_model/features.py`.
 
-**Still unwired (Steps 11/12/14)** — frontend calls with no backend endpoint,
-so those pages/cards fail when used:
+**Steps 10–12 implemented (2026-09-29, fix pass 4)** — risk dataset, model,
+findings:
 
-- Findings (`/repos/:repoId/findings`, `/findings/summary`): no `findings`
-  router and no `risk_findings` table (Step 12).
+- **Dataset verdict on CodeSearchNet: does not fit.** It is 2M code/NL pairs
+  with no risk labels — right for retrieval, wrong for this classifier — so
+  per the agreed fallback it was not used. Instead: feature engineering over
+  the caller's indexed repos (complexity via radon for Python, branch-keyword
+  approximation otherwise; LOC; file fan-in/out from Step 5 edges; test-file
+  filename heuristic; git churn) with deterministic v1 weak-label rules
+  (low/medium/high), topped up per class to 50 with a seeded synthetic
+  Python generator that runs through the *same* feature and labeling code
+  (verified by test: every synthetic sample lands its intended class).
+  v1 is documented as a heuristic distiller, not reviewed truth — every
+  sample records its `label_source`, and `manual` already outranks the rest.
+- **Model (Step 11)**: jina 768-d + 6 engineered features (scaler fits the
+  engineered tail only), `logistic` (default) or `gbt` (the page offers
+  both), stratified 80/20 split, pickle artifacts + meta + saved test split
+  under `app/risk_model/artifacts/` (gitignored — `POST /risk/train`
+  rebuilds them). Live: `logistic-v1` on 150 samples (12 real + 138
+  synthetic), test acc=1.0/macro_f1=1.0 on 30 held-out rows.
+- **Endpoints (Step 12)**: `POST /risk/train` (trains, then scores the
+  trained repos into `risk_findings`), `POST /risk/evaluate` (same saved
+  split — a double-scaling bug made it disagree with train until the split
+  was saved unscaled), `GET /repos/{id}/findings` (filters + pagination,
+  rows joined with symbol/file context) and `.../findings/summary`
+  (all three levels always present). Findings page shows 12 rows with real
+  names/paths/lines; its pagination buttons were dead (`searchParams.set`
+  without `setSearchParams`) and its Symbol/File/Lines columns rendered raw
+  UUIDs — all fixed. `benchmarks/risk_eval.py` imports the real module now
+  and measures the saved split instead of `randn`.
+
+**Still unwired (Step 14)** — frontend calls with no backend endpoint:
+
 - PR analysis (`/repos/:repoId/prs/{pr}/analysis`): no `pull_requests` router
-  and `pr_analysis/chain.py` still has no LLM call (Step 14).
-- Risk model (`/risk/train`, `/risk/evaluate`): no router — these back *both*
-  the RiskTraining page and the "Risk Model" card on Observability (Steps
-  11/15), so those two forms fail today.
+  and `pr_analysis/chain.py` still has no LLM call.
 - Slack alerting from the Celery task on job failure is written but was not
   exercised in this pass.
 
@@ -128,31 +156,32 @@ partial work in the backend:
 - `ruff check` and `ruff format --check` are clean: 34 errors in 8 Steps 13–19
   files (unused imports, long lines, missing EOF newlines, one unsorted import
   block, one unused variable) were fixed and those 8 files formatted.
-- `requirements.txt` now declares `numpy` and `scikit-learn`, which
-  `benchmarks/risk_eval.py` imports. `langchain` and `radon` are installed in
-  the venv but imported by no code at all, so they are deliberately not
-  declared.
+- `requirements.txt` declares `numpy`, `scikit-learn`, `radon` (Step 10
+  complexity) and `langchain` + `langchain-groq` (Step 9 agent) — all real
+  imports, verified by an AST sweep of `app`/`tests`/`alembic`.
 
 ## Project layout
 
 ```
 backend/
   app/
-    main.py          # FastAPI entrypoint (mounts 9 routers: auth, search, chat,
-                     # projects, repos, ingestion, analysis, observability,
-                     # webhooks — search before repos on purpose)
+    main.py          # FastAPI entrypoint (mounts 11 routers: auth, search, chat,
+                     # findings, risk, projects, repos, ingestion, analysis,
+                     # webhooks — observability, webhooks)
     config.py        # pydantic settings (DATABASE_URL, REDIS_URL, UPSTASH_TOKEN,
                      # SUPABASE_URL, SUPABASE_SERVICE_KEY, GITHUB_CLIENT_ID/SECRET,
                      # CLONE_ROOT_DIR, EMBEDDING_*, LLM_PROVIDER/LLM_MODEL)
     core/            # security.py (Supabase JWT auth), rate_limit.py,
                      #          encryption.py / cost_tracking.py / logging_json.py
-    api/             # routers: auth, search, chat, projects, repos, ingestion,
-                     #          analysis, observability, webhooks
+    api/             # routers: auth, search, chat, findings, risk, projects,
+                     #          repos, ingestion, analysis, observability, webhooks
     db/              # session.py, base.py
-    models/          # 9 models: user, project, repository, analysis_job, file,
-                     #          symbol, import_stmt, edge, code_embedding
-    schemas/         # auth, project, repo, job, analysis, github, chat
+    models/          # 10 models: user, project, repository, analysis_job, file,
+                     #          symbol, import_stmt, edge, code_embedding, risk_finding
+    schemas/         # auth, project, repo, job, analysis, github, chat, risk
     agents/          # chat_chain.py + tools.py (Step 9 grounded agent)
+    risk_model/      # features.py, labeling.py, dataset.py, train.py,
+                     #          predict.py (Steps 10-12; artifacts/ gitignored)
     ingestion/       # clone.py, filters.py, language_detect.py
     analysis/        # parsers.py, resolve.py (tree-sitter + import resolution)
     tasks/           # inject_repo.py (ingest), reindex_changed.py,
@@ -160,10 +189,10 @@ backend/
     embeddings/      # chunker.py, jina.py (Step 7)
     retrieval/       # search.py (Step 8 cosine retrieval)
     pr_analysis/     # chain.py, diff.py, impact.py (Step 14, partial)
-    benchmarks/      # retrieval_benchmark.py (imports; risk_eval.py cannot)
+    benchmarks/      # retrieval_benchmark.py, risk_eval.py (real split now)
     worker.py        # Celery app
-  alembic/           # migrations (head: d7c86d75d7b7)
-  tests/             # 49 tests: smoke, ingestion, analysis, chunking, chat
+  alembic/           # migrations (head: 217015d9942a risk_findings)
+  tests/             # 64 tests: smoke, ingestion, analysis, chunking, chat, risk
 frontend/
   src/
     App.tsx          # routes + AppShell
@@ -172,8 +201,8 @@ frontend/
     auth/            # AuthProvider, useAuth
     hooks/           # useJobStatus (TanStack polling)
     pages/           # Login, Dashboard, ProjectDetail, AnalysisStatus,
-                     #          RepoExplorer, Search, Observability, Chat (working);
-                     #          Findings/PRDashboard/RiskTraining (endpoints missing)
+                     #          RepoExplorer, Search, Observability, Chat, Findings,
+                     #          RiskTraining (working); PRDashboard (no endpoint)
     components/      # AppShell, LinkGithub
 ```
 

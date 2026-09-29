@@ -47,21 +47,26 @@ class EvalSummary:
 
 
 def _load_test_data() -> Tuple[np.ndarray, np.ndarray]:
+    """Held-out split saved at train time (same rows train held out).
+
+    Step 15 wired this to randomness ("returns synthetic data matching the
+    training distribution" — it matched nothing: pure randn with random
+    labels, so the harness always reported chance-level numbers). Since
+    Step 11 now persists the split, evaluation measures the real one.
     """
-    Load test data. In production, this should load from a labeled dataset.
-    For now, returns synthetic data matching the training distribution.
-    """
-    log.warning("Using synthetic test data — replace with real labeled test set")
-    np.random.seed(123)  # Different seed from training
-    n = 200
-    X = np.random.randn(n, 768 + 6)
-    y = np.random.choice([0, 1, 2], size=n, p=[0.6, 0.3, 0.1])
-    return X, y
+    from app.risk_model.train import load_test_split
+
+    return load_test_split()
 
 
 def _load_real_test_data(repo_ids: List[str]) -> Tuple[np.ndarray, np.ndarray]:
-    """Load real test data from database (placeholder)."""
-    # TODO: Implement when labeling infrastructure exists
+    """Test data for selected repos — identical to the saved split.
+
+    `repo_ids` is accepted for the historical signature, but re-splitting
+    per call would measure different rows than training held out, so the
+    saved split wins. Retraining on new repos refreshes it.
+    """
+    _ = repo_ids
     return _load_test_data()
 
 

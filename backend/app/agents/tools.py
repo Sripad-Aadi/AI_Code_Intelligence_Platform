@@ -28,13 +28,12 @@ from uuid import UUID
 from langchain_core.tools import BaseTool, StructuredTool
 from sqlalchemy.orm import Session
 
-from app.config import settings
 from app.models.code_embedding import CodeEmbedding
 from app.models.edge import CodeEdge
 from app.models.file import SourceFile
-from app.models.repository import ProjectRepository
 from app.models.symbol import Symbol
 from app.retrieval.search import search_code
+from app.risk_model.features import repo_clone_root
 from app.schemas.chat import EvidenceChunk
 
 log = logging.getLogger(__name__)
@@ -88,11 +87,8 @@ def _to_evidence(row: CodeEmbedding) -> EvidenceChunk:
 
 
 def _clone_root(db: Session, repo_id: UUID) -> Optional[Path]:
-    """Clone directory for this repository, or None if it was never cloned."""
-    repo = db.get(ProjectRepository, repo_id)
-    if repo is None or not repo.github_owner or not repo.github_name:
-        return None
-    return Path(settings.CLONE_ROOT_DIR) / repo.github_owner / repo.github_name
+    """Clone directory for this repository (real layout, shared helper)."""
+    return repo_clone_root(db, repo_id)
 
 
 def _directory_listing(db: Session, repo_id: UUID, path: str) -> List[str]:

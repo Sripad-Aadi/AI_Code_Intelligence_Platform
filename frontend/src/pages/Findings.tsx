@@ -33,7 +33,7 @@ function ProbabilityBar({ prob }: { prob: number }) {
 
 export default function Findings() {
   const { repoId } = useParams()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [riskLevel, setRiskLevel] = useState<RiskLevel | ''>('')
   const [minProb, setMinProb] = useState(0)
 
@@ -138,7 +138,7 @@ export default function Findings() {
           <p className="p-3 text-sm text-slate-400">
             {riskLevel || minProb > 0
               ? 'No findings match the current filters.'
-              : 'No risk findings for this repository. Run analysis first.'}
+              : 'No risk findings for this repository. Train the model from Risk Training.'}
           </p>
         ) : (
           <>
@@ -171,12 +171,16 @@ export default function Findings() {
                       </div>
                     </td>
                     <td className="td">
-                      <span className="font-mono text-xs font-semibold">{f.symbol_id.slice(0, 8)}</span>
+                      <span className="font-mono text-xs font-semibold">
+                        {f.symbol_kind} {f.symbol_name}
+                      </span>
                     </td>
                     <td className="td max-w-56 truncate font-mono text-xs text-slate-500">
-                      {f.symbol_id}
+                      {f.file_path}
                     </td>
-                    <td className="td text-xs text-slate-500">—</td>
+                    <td className="td text-xs text-slate-500 font-mono">
+                      {f.start_line}–{f.end_line}
+                    </td>
                     <td className="td text-xs text-slate-400 font-mono">
                       {f.model_version.slice(0, 20)}…
                     </td>
@@ -195,14 +199,20 @@ export default function Findings() {
                   <button
                     className="btn btn-outline btn-sm"
                     disabled={!searchParams.get('page') || parseInt(searchParams.get('page')!) <= 1}
-                    onClick={() => searchParams.set('page', String(parseInt(searchParams.get('page')!) - 1))}
+                    onClick={() => {
+                      const prev = parseInt(searchParams.get('page') ?? '2') - 1
+                      setSearchParams(prev > 1 ? { page: String(prev) } : {})
+                    }}
                   >
                     Prev
                   </button>
                   <button
                     className="btn btn-outline btn-sm"
-                    disabled={parseInt(searchParams.get('page')!) * 50 >= findings.data.total}
-                    onClick={() => searchParams.set('page', String(parseInt(searchParams.get('page')!) + 1))}
+                    disabled={parseInt(searchParams.get('page') ?? '1') * 50 >= findings.data.total}
+                    onClick={() => {
+                      const next = parseInt(searchParams.get('page') ?? '1') + 1
+                      setSearchParams({ page: String(next) })
+                    }}
                   >
                     Next
                   </button>

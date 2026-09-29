@@ -161,6 +161,11 @@ export interface RiskFinding {
   model_version: string
   created_at: string
   updated_at: string
+  symbol_name: string
+  symbol_kind: string
+  file_path: string
+  start_line: number
+  end_line: number
 }
 
 export interface RiskFindingListResponse {
