@@ -106,22 +106,18 @@ rather than relying exclusively on exact keyword matches.
 
 ## Technology Stack
 
-The platform's implementation uses a combination of web technologies,
-source-code analysis, and AI-assisted retrieval. The following reflects
-the intended technology stack; verify individual components against the
-actual implementation before publishing.
 
-  Layer                   Technologies
-  ----------------------- ----------------------------------------------------
-  Frontend                React, TypeScript, Tailwind CSS
-  Backend                 Python, FastAPI, SQLAlchemy, Alembic
-  Database                PostgreSQL, pgvector
-  Background Processing   Celery, Redis
-  AI/ML                   PyTorch, Transformers, Sentence Transformers, Hugging Face Hub, Scikit-learn
-  AI Orchestration        LangChain
-  Source Control          Git, GitHub API
-  Code Analysis           AST-based parsing and source-code analysis tools
-  Semantic Retrieval      Code embeddings and vector search
+| Layer | Technologies |
+|---|---|
+| Frontend | React, TypeScript, Tailwind CSS |
+| Backend | Python, FastAPI, SQLAlchemy, Alembic |
+| Database | PostgreSQL, pgvector |
+| Background Processing | Celery, Redis |
+| AI/ML | PyTorch, Transformers, Sentence Transformers, Hugging Face Hub, Scikit-learn |
+| AI Orchestration | LangChain |
+| Source Control | Git, GitHub API |
+| Code Analysis | AST-based parsing and source-code analysis tools |
+| Semantic Retrieval | Code embeddings and vector search |
 
 
 ## Project layout
