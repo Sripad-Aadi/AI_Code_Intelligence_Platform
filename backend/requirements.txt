@@ -12,27 +12,13 @@ python-jose==3.5.0
 cryptography==50.0.1
 tree-sitter==0.21.3
 tree-sitter-languages==1.10.2
-# Step 7 embeddings. torch must be the CPU wheel:
-#   pip install torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu
-# (the default PyPI wheel pulls ~2.5GB of CUDA libraries for no benefit here).
 torch==2.14.0
-# transformers MUST stay on 4.x: jina-embeddings-v2's custom modeling_bert.py
-# imports find_pruneable_heads_and_indices from transformers.pytorch_utils,
-# which transformers 5.x removed -> ImportError at model load. This in turn
-# caps sentence-transformers at 3.x (6.x requires transformers>=5).
 sentence-transformers==3.4.1
 transformers==4.46.3
-# 0.x on purpose: huggingface-hub 1.x is only accepted by sentence-transformers
-# 6.x, and the transformers-4.x custom-code loader expects the 0.x API.
 huggingface-hub==0.35.3
 pgvector==0.5.0
-# Step 9 (AI chat) / Step 14 (PR chain): LangChain tool-calling agent on Groq.
-# langchain-groq pulls in the `groq` SDK, langchain-core comes with langchain.
 langchain==0.3.25
 langchain-groq==0.2.3
-# Step 10/11 risk model: radon computes cyclomatic complexity for Python
-# (Step 10 features); sklearn fits the classifier (Step 11). radon was
-# already in the venv (the plan names it) — now it is a real import.
 numpy==2.5.3
 scikit-learn==1.9.1
 radon==6.0.1
