@@ -7,6 +7,7 @@ attaches one and shallow-clones it (see app/api/projects.py).
 
 from typing import List
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -42,7 +43,22 @@ async def list_github_repos(
     user = _require_linked_user(db, current_user)
     try:
         return github.list_user_repos(user.github_access_token)
-    except Exception as e:  # httpx errors / GitHub 4xx-5xx
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in (401, 403):
+            # The stored OAuth token is dead (revoked/expired) — retrying
+            # changes nothing, so say exactly what to do instead of 502.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "GitHub rejected the stored token — re-link GitHub on "
+                    "the Profile page, then try again."
+                ),
+            )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"GitHub API error: {exc}",
+        )
+    except Exception as e:  # httpx errors / GitHub 5xx
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"GitHub API error: {e}",

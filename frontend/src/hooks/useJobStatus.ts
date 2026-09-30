@@ -33,6 +33,6 @@ export function statusStyle(status: AnalysisJob['status']): string {
     case 'failed':
       return 'bg-rose-100 text-rose-700'
     default:
-      return 'bg-slate-100 text-slate-600'
+      return 'bg-stone-100 text-stone-600'
   }
 }

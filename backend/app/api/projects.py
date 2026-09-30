@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, selectinload
 
@@ -148,6 +149,19 @@ def attach_repository(
     # 1. Look up the repository on GitHub to get authoritative metadata.
     try:
         repo = github.get_repo(user_row.github_access_token, payload.github_full_name)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in (401, 403):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "GitHub rejected the stored token — re-link GitHub on "
+                    "the Profile page, then try again."
+                ),
+            )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"GitHub API error resolving repo: {exc}",
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

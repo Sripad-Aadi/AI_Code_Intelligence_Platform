@@ -11,8 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.ingestion import _get_owned_repo
-from app.core.security import CurrentUser, get_current_user
+from app.core.security import CurrentUser, get_current_user, get_owned_repo
 from app.db.session import get_db
 from app.models.edge import CodeEdge
 from app.models.file import SourceFile
@@ -55,7 +54,7 @@ def list_repo_files(
     current_user: CurrentUser = Depends(get_current_user),
 ) -> List[SourceFile]:
     """List indexed files for a repo (path prefix filter + paging)."""
-    _get_owned_repo(repo_id, current_user, db)
+    get_owned_repo(repo_id, current_user, db)
     query = db.query(SourceFile).filter(SourceFile.repo_id == repo_id)
     if path:
         query = query.filter(SourceFile.path.like(f"{path}%"))
@@ -105,7 +104,7 @@ def list_repo_symbols(
     current_user: CurrentUser = Depends(get_current_user),
 ) -> List[dict]:
     """Repo-wide symbols, optionally filtered by kind / name."""
-    _get_owned_repo(repo_id, current_user, db)
+    get_owned_repo(repo_id, current_user, db)
     query = db.query(Symbol, SourceFile.path).join(
         SourceFile, SourceFile.id == Symbol.file_id
     )
@@ -138,7 +137,7 @@ def list_repo_edges(
     current_user: CurrentUser = Depends(get_current_user),
 ) -> List[dict]:
     """Import (file→file) or belongs_to (symbol→file) edges for a repo."""
-    _get_owned_repo(repo_id, current_user, db)
+    get_owned_repo(repo_id, current_user, db)
     target = SourceFile.__table__.alias("target")
     base = db.query(CodeEdge.edge_type, target.c.path).join(
         target, target.c.id == CodeEdge.target_id

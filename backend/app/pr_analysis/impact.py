@@ -47,9 +47,6 @@ class ImpactResult:
     # Test files that should be run (heuristic)
     test_files: List[str]
 
-    # Risk scores for changed symbols (if risk model available)
-    risk_scores: Dict[str, Dict]  # symbol_id -> {level, probability}
-
 
 def _symbol_intersects_range(
     symbol: Symbol,
@@ -194,21 +191,6 @@ def find_affected_files_one_hop(
     return unique
 
 
-TEST_FILE_PATTERNS = [
-    "test_*.py",
-    "*_test.py",
-    "*.test.ts",
-    "*.test.tsx",
-    "*.test.js",
-    "*.test.jsx",
-    "*_test.go",
-    "*Test.java",
-    "*Test.cs",
-    "*_test.rs",
-    "test_*.rs",
-]
-
-
 def find_related_test_files(
     db: Session,
     repo_id: UUID,
@@ -239,12 +221,7 @@ def find_related_test_files(
         parent = p.parent
         stem = p.stem
 
-        # Strategy 1: Same directory, test patterns
-        for pattern in TEST_FILE_PATTERNS:
-            # Convert glob to SQL LIKE
-            pass  # We'll query DB directly
-
-        # Strategy 2: DB query for test files in same directory
+        # Strategy 1: DB query for test files in same directory
         # Match files in same directory with test-like names
         dir_path = str(parent)
         if dir_path == ".":
@@ -306,38 +283,6 @@ def find_related_test_files(
     return sorted(test_files)
 
 
-def get_risk_scores_for_symbols(
-    db: Session,
-    repo_id: UUID,
-    symbol_ids: List[UUID],
-) -> Dict[str, Dict]:
-    """
-    Fetch risk findings for the given symbols.
-    """
-    from app.models.risk_finding import RiskFinding
-
-    if not symbol_ids:
-        return {}
-
-    rows = (
-        db.query(RiskFinding)
-        .filter(
-            RiskFinding.repo_id == repo_id,
-            RiskFinding.symbol_id.in_(symbol_ids),
-        )
-        .all()
-    )
-
-    return {
-        str(r.symbol_id): {
-            "risk_level": r.risk_level,
-            "probability": r.probability,
-            "model_version": r.model_version,
-        }
-        for r in rows
-    }
-
-
 def analyze_pr_impact(
     db: Session,
     repo_id: UUID,
@@ -363,13 +308,8 @@ def analyze_pr_impact(
     # Step 3: Find related test files
     test_files = find_related_test_files(db, repo_id, changed_symbols, affected_files)
 
-    # Step 4: Get risk scores for changed symbols
-    symbol_ids = [s.symbol_id for s in changed_symbols]
-    risk_scores = get_risk_scores_for_symbols(db, repo_id, symbol_ids)
-
     return ImpactResult(
         changed_symbols=changed_symbols,
         affected_files=affected_files,
         test_files=test_files,
-        risk_scores=risk_scores,
     )

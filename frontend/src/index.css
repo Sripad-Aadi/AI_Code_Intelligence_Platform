@@ -3,46 +3,156 @@
 @theme {
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
+
+  /* Warm, distinctive palette */
+  --color-primary: #0d9488;
+  --color-primary-hover: #0f766e;
+  --color-primary-light: #ccfbf1;
+  --color-accent: #f59e0b;
+  --color-accent-hover: #d97706;
+  --color-surface: #fafaf9;
+  --color-surface-warm: #f5f5f4;
+}
+
+@layer base {
+  html {
+    font-size: 16px;
+  }
+  body {
+    @apply text-base text-stone-700;
+  }
 }
 
 @layer components {
+  /* Buttons */
   .btn {
-    @apply inline-flex cursor-pointer items-center gap-2 rounded-lg border border-transparent px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex cursor-pointer items-center gap-2 rounded-lg border border-transparent px-4 py-2.5 text-sm font-medium transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply bg-indigo-600 text-white hover:bg-indigo-700;
+    @apply bg-teal-600 text-white shadow-sm hover:bg-teal-700 hover:shadow;
   }
   .btn-outline {
-    @apply border-slate-300 bg-white text-slate-700 hover:bg-slate-50;
+    @apply border-stone-300 bg-white text-stone-700 hover:border-stone-400 hover:bg-stone-50;
   }
   .btn-danger {
     @apply bg-rose-600 text-white hover:bg-rose-700;
   }
   .btn-ghost {
-    @apply text-slate-600 hover:bg-slate-100;
+    @apply text-stone-600 hover:bg-stone-100 hover:text-stone-900;
   }
+  .btn-sm {
+    @apply px-2.5 py-1 text-xs;
+  }
+
+  /* Cards */
   .card {
-    @apply rounded-xl border border-slate-200 bg-white shadow-sm;
+    @apply rounded-xl border border-stone-200 bg-white shadow-sm transition-shadow hover:shadow-md;
   }
+  .card-flat {
+    @apply rounded-xl border border-stone-200 bg-white;
+  }
+
+  /* Form elements */
   .input {
-    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500;
+    @apply w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder-stone-400 transition-colors focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500;
   }
   .label {
-    @apply mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500;
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wider text-stone-500;
   }
+
+  /* Badges */
   .badge {
-    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
   }
+  .badge-teal {
+    @apply bg-teal-50 text-teal-700;
+  }
+  .badge-amber {
+    @apply bg-amber-50 text-amber-700;
+  }
+  .badge-rose {
+    @apply bg-rose-50 text-rose-700;
+  }
+  .badge-emerald {
+    @apply bg-emerald-50 text-emerald-700;
+  }
+  .badge-stone {
+    @apply bg-stone-100 text-stone-600;
+  }
+
+  /* Tables */
   .th {
-    @apply px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400;
+    @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-stone-500;
   }
   .td {
-    @apply px-3 py-2 text-sm text-slate-700;
+    @apply px-4 py-3 text-sm text-stone-700;
   }
+
+  /* Navigation */
   .nav-link {
-    @apply rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900;
+    @apply rounded-lg px-3 py-1.5 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-900;
   }
   .nav-link-active {
-    @apply rounded-lg bg-indigo-50 px-3 py-1.5 text-sm font-semibold text-indigo-700;
+    @apply rounded-lg bg-teal-50 px-3 py-1.5 text-sm font-semibold text-teal-700;
+  }
+
+  /* Empty state */
+  .empty-state {
+    @apply flex flex-col items-center justify-center rounded-xl border border-dashed border-stone-300 bg-stone-50 px-6 py-12 text-center;
+  }
+
+  /* Skeleton loading */
+  .skeleton {
+    @apply animate-pulse rounded bg-stone-200;
+  }
+
+  /* Section heading */
+  .section-heading {
+    @apply text-sm font-semibold uppercase tracking-wider text-stone-400;
+  }
+
+  /* Stat card */
+  .stat-card {
+    @apply rounded-xl border border-stone-200 bg-white p-4 shadow-sm;
+  }
+  .stat-label {
+    @apply text-xs font-medium uppercase tracking-wider text-stone-500;
+  }
+  .stat-value {
+    @apply mt-1 text-2xl font-bold text-stone-900;
+  }
+
+  /* Progress bar */
+  .progress-bar {
+    @apply h-2 overflow-hidden rounded-full bg-stone-200;
+  }
+  .progress-fill {
+    @apply h-full rounded-full bg-teal-500 transition-all duration-300;
+  }
+
+  /* Tooltip */
+  .tooltip {
+    @apply absolute z-10 rounded-lg bg-stone-900 px-3 py-1.5 text-xs text-white shadow-lg;
+  }
+
+  /* Divider */
+  .divider {
+    @apply border-t border-stone-200;
+  }
+
+  /* Code block */
+  .code-block {
+    @apply rounded-lg bg-stone-900 p-4 font-mono text-sm text-stone-100 overflow-auto;
+  }
+
+  /* File tree */
+  .tree-item {
+    @apply flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors;
+  }
+  .tree-item:hover {
+    @apply bg-teal-50;
+  }
+  .tree-item-active {
+    @apply bg-teal-50 text-teal-700;
   }
 }

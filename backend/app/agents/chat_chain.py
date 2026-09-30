@@ -28,12 +28,14 @@ instead of staying at zero forever.
 import logging
 import re
 import time
-from typing import Any, List, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 from uuid import UUID
 
 import groq
 from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.outputs import LLMResult
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_groq import ChatGroq
 from sqlalchemy.orm import Session
@@ -47,6 +49,48 @@ from app.schemas.chat import ChatMessage, EvidenceChunk
 log = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "openai/gpt-oss-20b"
+
+
+class _UsageCapture(BaseCallbackHandler):
+    """Capture LLM token usage from agent execution via callbacks.
+
+    AgentExecutor does not include ``messages`` in its result dict, so
+    ``result.get("messages", [])`` returns ``[]`` and ``_record_usage`` is
+    never called. This handler captures usage from each ``on_llm_end`` event
+    instead, which fires for every LLM call the agent makes.
+    """
+
+    def __init__(self) -> None:
+        self.usages: List[Dict[str, Any]] = []
+
+    def on_llm_end(
+        self,
+        response: LLMResult,
+        *,
+        run_id: UUID = None,
+        parent_run_id: UUID = None,
+        **kwargs: Any,
+    ) -> None:
+        """Record token usage from one LLM call."""
+        try:
+            for generation in response.generations:
+                for gen in generation:
+                    # ChatGeneration stores usage on its inner message, not
+                    # directly on the generation object.
+                    message = getattr(gen, "message", None)
+                    meta = getattr(message, "usage_metadata", None) or {}
+                    input_tokens = int(meta.get("input_tokens") or 0)
+                    output_tokens = int(meta.get("output_tokens") or 0)
+                    if input_tokens or output_tokens:
+                        self.usages.append(
+                            {
+                                "input_tokens": input_tokens,
+                                "output_tokens": output_tokens,
+                            }
+                        )
+        except Exception:
+            log.exception("could not capture LLM usage from callback")
+
 
 # Bound the spend: the agent gets a handful of turns, and only the last few
 # turns of history are replayed so a long conversation cannot grow forever.
@@ -138,30 +182,26 @@ def _history_messages(
     return messages
 
 
-def _record_usage(result: dict, repo_id: UUID) -> None:
-    """Sum token usage across every model call in the run (Step 19)."""
-    input_tokens = 0
-    output_tokens = 0
-    for message in result.get("messages", []):
-        meta = getattr(message, "usage_metadata", None)
-        if not meta:
-            # Belt and braces: some paths report usage only under
-            # response_metadata.token_usage (Groq's streaming form), so take
-            # whichever signal is present rather than silently recording 0.
-            raw = (getattr(message, "response_metadata", None) or {}).get("token_usage")
-            if raw:
-                meta = {
-                    "input_tokens": raw.get("prompt_tokens"),
-                    "output_tokens": raw.get("completion_tokens"),
-                }
-        if not meta:
-            continue
-        input_tokens += int(meta.get("input_tokens") or 0)
-        output_tokens += int(meta.get("output_tokens") or 0)
+def _record_usage(message, repo_id: UUID, user_id: str) -> None:
+    """Record token usage from a single LLM call (Step 19)."""
+    meta = getattr(message, "usage_metadata", None) or {}
+    input_tokens = int(meta.get("input_tokens") or 0)
+    output_tokens = int(meta.get("output_tokens") or 0)
+    # Fallback: some paths report usage only under response_metadata.token_usage
+    if not (input_tokens or output_tokens):
+        raw = (getattr(message, "response_metadata", None) or {}).get("token_usage")
+        if raw:
+            input_tokens = int(raw.get("prompt_tokens") or 0)
+            output_tokens = int(raw.get("completion_tokens") or 0)
+    _record_usage_from_tokens(input_tokens, output_tokens, repo_id, user_id)
 
+
+def _record_usage_from_tokens(
+    input_tokens: int, output_tokens: int, repo_id: UUID, user_id: str
+) -> None:
+    """Record token usage from raw token counts (Step 19)."""
     if not (input_tokens or output_tokens):
         return
-
     model = _model_name()
     try:
         get_cost_tracker().record(
@@ -173,6 +213,7 @@ def _record_usage(result: dict, repo_id: UUID) -> None:
                 latency_ms=0,
                 estimated_cost_usd=calculate_cost(model, input_tokens, output_tokens),
                 repo_id=repo_id,
+                user_id=user_id,
             )
         )
     except Exception:  # never fail an answer over bookkeeping
@@ -251,7 +292,11 @@ Rules:
 
 
 def _answer_from_evidence(
-    llm: ChatGroq, query: str, evidence: List[EvidenceChunk], repo_id: UUID
+    llm: ChatGroq,
+    query: str,
+    evidence: List[EvidenceChunk],
+    repo_id: UUID,
+    user_id: str,
 ) -> str:
     """Answer directly from retrieved chunks, with no tools.
 
@@ -275,26 +320,8 @@ def _answer_from_evidence(
             ),
         ]
     )
+    _record_usage(message, repo_id, user_id)
     content = message.content if isinstance(message.content, str) else ""
-    meta = getattr(message, "usage_metadata", None) or {}
-    try:
-        get_cost_tracker().record(
-            LLMUsage(
-                model=_model_name(),
-                provider=settings.LLM_PROVIDER,
-                input_tokens=int(meta.get("input_tokens") or 0),
-                output_tokens=int(meta.get("output_tokens") or 0),
-                latency_ms=0,
-                estimated_cost_usd=calculate_cost(
-                    _model_name(),
-                    int(meta.get("input_tokens") or 0),
-                    int(meta.get("output_tokens") or 0),
-                ),
-                repo_id=repo_id,
-            )
-        )
-    except Exception:  # never fail an answer over bookkeeping
-        log.exception("could not record LLM usage")
     return _sanitize_answer(content.strip())
 
 
@@ -317,6 +344,7 @@ def run_chat(
     repo_id: UUID,
     query: str,
     history: Sequence[ChatMessage] = (),
+    user_id: str = "",
 ) -> Tuple[str, List[EvidenceChunk]]:
     """Run one grounded turn and return ``(answer, evidence)``.
 
@@ -359,10 +387,14 @@ def run_chat(
 
     payload = {"input": query, "chat_history": _history_messages(history)}
 
+    # Capture LLM usage via callback — AgentExecutor does not include
+    # ``messages`` in its result, so result.get("messages", []) is always [].
+    usage_capture = _UsageCapture()
+
     started = time.perf_counter()
     result = None
     try:
-        result = executor.invoke(payload)
+        result = executor.invoke(payload, config={"callbacks": [usage_capture]})
     except groq.APIStatusError as exc:
         # gpt-oss-20b occasionally emits malformed tool-call JSON
         # (`{"query":"tsx",""}` — truncated arguments), which Groq rejects
@@ -373,7 +405,7 @@ def run_chat(
         if getattr(exc, "status_code", None) == 400:
             log.warning("chat tool call rejected, retrying once (repo=%s)", repo_id)
             try:
-                result = executor.invoke(payload)
+                result = executor.invoke(payload, config={"callbacks": [usage_capture]})
             except groq.APIStatusError as retry_exc:
                 if getattr(retry_exc, "status_code", None) != 400:
                     raise _translate_provider_error(retry_exc) from retry_exc
@@ -406,20 +438,27 @@ def run_chat(
             repo_id,
             len(evidence),
         )
-        answer = _answer_from_evidence(llm, query, evidence, repo_id)
+        answer = _answer_from_evidence(llm, query, evidence, repo_id, user_id)
         if not answer:
             raise ChatError("The model returned an empty answer.")
         return answer, evidence
 
-    _record_usage(result, repo_id)
-
-    _record_usage(result, repo_id)
+    # Record usage captured by the callback handler (AgentExecutor does not
+    # include messages in its result, so result.get("messages", []) is []).
+    for usage in usage_capture.usages:
+        _record_usage_from_tokens(
+            usage["input_tokens"],
+            usage["output_tokens"],
+            repo_id,
+            user_id,
+        )
     log.info(
-        "chat turn: repo=%s tools=%d evidence=%d ms=%d chars=%d",
+        "chat turn: repo=%s tools=%d evidence=%d ms=%d chars=%d usages=%d",
         repo_id,
         len(tools),
         len(evidence),
         elapsed_ms,
         len(answer),
+        len(usage_capture.usages),
     )
     return answer, evidence

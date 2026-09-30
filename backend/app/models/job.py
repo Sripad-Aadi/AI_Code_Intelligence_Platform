@@ -45,6 +45,7 @@ class AnalysisJob(Base):
         nullable=False,
     )
     status = Column(String(20), nullable=False, default=JOB_QUEUED)
+    mode = Column(String(20), nullable=False, default="full")  # full | incremental
     started_at = Column(DateTime(timezone=True), nullable=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)
     error = Column(Text, nullable=True)

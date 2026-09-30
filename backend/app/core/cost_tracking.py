@@ -1,17 +1,20 @@
 """Cost tracking for LLM API calls (Step 19).
 
 Tracks token usage, estimated costs, and latency for LLM requests.
+Persisted to a JSON file so records survive server restarts.
 """
 
+import json
 import logging
-import time
-from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, Optional
 from uuid import UUID
 
 log = logging.getLogger(__name__)
+
+COST_FILE = Path(__file__).resolve().parent.parent / "cost_records.json"
 
 # Model pricing (USD per 1M tokens), the provider's list price. A free-tier
 # Groq key bills $0 regardless — this is what the same call would cost paid.
@@ -53,14 +56,67 @@ class LLMUsage:
 
 
 class CostTracker:
-    """In-memory cost tracker with optional DB persistence."""
+    """File-persisted cost tracker — records survive server restarts."""
 
     def __init__(self):
         self._records: list[LLMUsage] = []
+        self._load()
+
+    def _load(self) -> None:
+        """Load records from the JSON file."""
+        if not COST_FILE.exists():
+            return
+        try:
+            with open(COST_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+            for row in data:
+                self._records.append(
+                    LLMUsage(
+                        model=row["model"],
+                        provider=row["provider"],
+                        input_tokens=row["input_tokens"],
+                        output_tokens=row["output_tokens"],
+                        latency_ms=row["latency_ms"],
+                        estimated_cost_usd=row["estimated_cost_usd"],
+                        timestamp=datetime.fromisoformat(row["timestamp"]),
+                        request_id=row.get("request_id"),
+                        user_id=row.get("user_id"),
+                        repo_id=UUID(row["repo_id"]) if row.get("repo_id") else None,
+                    )
+                )
+        except Exception:
+            log.exception("could not load cost records from %s", COST_FILE)
+
+    def _save(self) -> None:
+        """Persist records to the JSON file."""
+        try:
+            with open(COST_FILE, "w", encoding="utf-8") as f:
+                json.dump(
+                    [
+                        {
+                            "model": r.model,
+                            "provider": r.provider,
+                            "input_tokens": r.input_tokens,
+                            "output_tokens": r.output_tokens,
+                            "latency_ms": r.latency_ms,
+                            "estimated_cost_usd": r.estimated_cost_usd,
+                            "timestamp": r.timestamp.isoformat(),
+                            "request_id": r.request_id,
+                            "user_id": r.user_id,
+                            "repo_id": str(r.repo_id) if r.repo_id else None,
+                        }
+                        for r in self._records
+                    ],
+                    f,
+                    indent=2,
+                )
+        except Exception:
+            log.exception("could not save cost records to %s", COST_FILE)
 
     def record(self, usage: LLMUsage) -> None:
         """Record an LLM usage event."""
         self._records.append(usage)
+        self._save()
         log.info(
             "LLM usage: model=%s provider=%s tokens=%d/%d cost=$%.6f latency=%dms",
             usage.model,
@@ -71,11 +127,17 @@ class CostTracker:
             usage.latency_ms,
         )
 
-    def get_summary(self, repo_id: Optional[UUID] = None) -> Dict:
-        """Get cost summary, optionally filtered by repo."""
+    def get_summary(
+        self,
+        repo_id: Optional[UUID] = None,
+        user_id: Optional[str] = None,
+    ) -> Dict:
+        """Get cost summary, optionally filtered by repo and/or user."""
         records = self._records
         if repo_id:
-            records = [r for r in self._records if r.repo_id == repo_id]
+            records = [r for r in records if r.repo_id == repo_id]
+        if user_id:
+            records = [r for r in records if r.user_id == user_id]
 
         total_input = sum(r.input_tokens for r in records)
         total_output = sum(r.output_tokens for r in records)
@@ -93,10 +155,12 @@ class CostTracker:
             "avg_latency_ms": round(avg_latency, 1),
         }
 
-    def get_by_model(self) -> Dict:
-        """Get usage grouped by model."""
+    def get_by_model(self, user_id: Optional[str] = None) -> Dict:
+        """Get usage grouped by model, optionally filtered by user."""
         result: Dict[str, Dict] = {}
         for r in self._records:
+            if user_id and r.user_id != user_id:
+                continue
             if r.model not in result:
                 result[r.model] = {
                     "calls": 0,
@@ -132,47 +196,3 @@ def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     input_cost = (input_tokens / 1_000_000) * pricing["input"]
     output_cost = (output_tokens / 1_000_000) * pricing["output"]
     return round(input_cost + output_cost, 6)
-
-
-async def track_llm_call(
-    model: str,
-    provider: str,
-    input_tokens: int,
-    output_tokens: int,
-    latency_ms: int,
-    request_id: Optional[str] = None,
-    user_id: Optional[str] = None,
-    repo_id: Optional[UUID] = None,
-) -> LLMUsage:
-    """Record an LLM API call and return the usage record."""
-    cost = calculate_cost(model, input_tokens, output_tokens)
-    usage = LLMUsage(
-        model=model,
-        provider=provider,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        latency_ms=latency_ms,
-        estimated_cost_usd=cost,
-        request_id=request_id,
-        user_id=user_id,
-        repo_id=repo_id,
-    )
-    _tracker.record(usage)
-    return usage
-
-
-@asynccontextmanager
-async def track_llm_latency(
-    model: str,
-    provider: str,
-    request_id: Optional[str] = None,
-):
-    """Context manager to track LLM call latency."""
-    start = time.perf_counter()
-    try:
-        yield
-    finally:
-        _latency_ms = int((time.perf_counter() - start) * 1000)
-        # Note: tokens would need to be captured from the actual response
-        # This is a placeholder for the context manager pattern
-        pass

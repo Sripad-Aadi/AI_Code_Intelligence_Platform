@@ -25,9 +25,8 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.api.ingestion import _get_owned_repo
 from app.config import settings
-from app.core.security import CurrentUser, get_current_user
+from app.core.security import CurrentUser, get_current_user, get_owned_repo
 from app.db.session import get_db
 from app.models.code_embedding import CodeEmbedding
 from app.models.project import Project
@@ -161,7 +160,7 @@ def search_repository(
     current_user: CurrentUser = Depends(get_current_user),
 ) -> SearchResponse:
     """Top-k chunks for `q` inside one repository the caller owns."""
-    _get_owned_repo(repo_id, current_user, db)
+    get_owned_repo(repo_id, current_user, db)
     hits = _run_search(
         db,
         query=q,

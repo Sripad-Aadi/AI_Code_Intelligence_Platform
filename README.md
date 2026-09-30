@@ -147,10 +147,9 @@ findings:
 
 **Skeleton / not verified (Steps 13, 16–19)** — partial work in the backend:
 
-- `app/api/webhooks.py` is mounted but half-implemented and `core/encryption.py`
-  is unused (GitHub tokens are still plaintext) — neither has been run or
-  proven. `core/cost_tracking.py` **is** fed now (chat + PR summary record
-  usage every call) but is in-memory, so totals reset when the API restarts.
+- `core/encryption.py` is unused (GitHub tokens are still plaintext).
+  `core/cost_tracking.py` is fed now (chat + PR summary record usage every
+  call) and persists to `app/cost_records.json` so totals survive restarts.
 - Step 16 (incremental indexing) and the Step 17/18 hardening beyond
   rate limits + timeouts are not implemented.
 
@@ -170,39 +169,45 @@ findings:
   complexity) and `langchain` + `langchain-groq` (Step 9 agent) — all real
   imports, verified by an AST sweep of `app`/`tests`/`alembic`.
 
+**Risk model removed (2026-09-30)** — the Steps 10–12 risk classifier was
+removed after it backfired. Deleted: `app/api/findings.py`, `app/api/risk.py`,
+`app/api/webhooks.py`, `app/models/risk_finding.py`, `app/risk_model/`,
+`app/schemas/risk.py`, `app/tasks/analyze_pr.py`, `app/tasks/reindex_changed.py`,
+`app/benchmarks/risk_eval.py`, `frontend/src/pages/Findings.tsx`,
+`frontend/src/pages/RiskTraining.tsx`. The PR analysis chain no longer
+computes risk scores — the Risk/Confidence columns were removed from the
+PR dashboard.
+
 ## Project layout
 
 ```
 backend/
   app/
-    main.py          # FastAPI entrypoint (mounts 12 routers: auth, search, chat,
-                     # findings, risk, pull_requests, projects, repos,
-                     # ingestion, analysis, observability, webhooks)
+    main.py          # FastAPI entrypoint (mounts 9 routers: auth, search, chat,
+                     # pull_requests, projects, repos, ingestion, analysis,
+                     # observability)
     config.py        # pydantic settings (DATABASE_URL, REDIS_URL, UPSTASH_TOKEN,
                      # SUPABASE_URL, SUPABASE_SERVICE_KEY, GITHUB_CLIENT_ID/SECRET,
                      # CLONE_ROOT_DIR, EMBEDDING_*, LLM_PROVIDER/LLM_MODEL)
     core/            # security.py (Supabase JWT auth), rate_limit.py,
-                     #          encryption.py / cost_tracking.py / logging_json.py
-    api/             # routers: auth, search, chat, findings, risk, projects,
-                     #          repos, ingestion, analysis, observability, webhooks
+                     #          cost_tracking.py
+    api/             # routers: auth, search, chat, pull_requests, projects,
+                     #          repos, ingestion, analysis, observability
     db/              # session.py, base.py
-    models/          # 10 models: user, project, repository, analysis_job, file,
-                     #          symbol, import_stmt, edge, code_embedding, risk_finding
-    schemas/         # auth, project, repo, job, analysis, github, chat, risk
+    models/          # 9 models: user, project, repository, analysis_job, file,
+                     #          symbol, import_stmt, edge, code_embedding
+    schemas/         # auth, project, repo, job, analysis, github, chat
     agents/          # chat_chain.py + tools.py (Step 9 grounded agent)
-    risk_model/      # features.py, labeling.py, dataset.py, train.py,
-                     #          predict.py (Steps 10-12; artifacts/ gitignored)
     ingestion/       # clone.py, filters.py, language_detect.py
     analysis/        # parsers.py, resolve.py (tree-sitter + import resolution)
-    tasks/           # inject_repo.py (ingest), reindex_changed.py,
-                     #          analyze_pr.py (stub)
+    tasks/           # inject_repo.py (ingest)
     embeddings/      # chunker.py, jina.py (Step 7)
     retrieval/       # search.py (Step 8 cosine retrieval)
-    pr_analysis/     # chain.py, diff.py, impact.py (Step 14, partial)
-    benchmarks/      # retrieval_benchmark.py, risk_eval.py (real split now)
+    pr_analysis/     # chain.py, diff.py, impact.py (Step 14)
+    benchmarks/      # retrieval_benchmark.py
     worker.py        # Celery app
-  alembic/           # migrations (head: 217015d9942a risk_findings)
-  tests/             # 64 tests: smoke, ingestion, analysis, chunking, chat, risk
+  alembic/           # migrations (head: 2c35e0edd4ef drop risk_findings)
+  tests/             # 60 tests: smoke, ingestion, analysis, chunking, chat, pr
 frontend/
   src/
     App.tsx          # routes + AppShell
@@ -211,9 +216,9 @@ frontend/
     auth/            # AuthProvider, useAuth
     hooks/           # useJobStatus (TanStack polling)
     pages/           # Login, Dashboard, ProjectDetail, AnalysisStatus,
-                     #          RepoExplorer, Search, Observability, Chat, Findings,
-                     #          RiskTraining, PRDashboard (working)
-    components/      # AppShell, LinkGithub
+                     #          RepoExplorer, Search, Observability, Chat,
+                     #          PRDashboard, Profile, Landing
+    components/      # AppShell
 ```
 
 ## Prerequisites
@@ -283,8 +288,8 @@ venv\Scripts\python -m ruff check app tests alembic
 venv\Scripts\python -m ruff format --check app tests alembic
 ```
 
-Current state: **38 tests pass; `ruff check` and `ruff format --check` are
-both clean** (as of fix pass 2, 2026-09-28). Frontend gates:
+Current state: **60 tests pass; `ruff check` and `ruff format --check` are
+both clean** (as of 2026-09-30). Frontend gates:
 
 ```powershell
 cd frontend

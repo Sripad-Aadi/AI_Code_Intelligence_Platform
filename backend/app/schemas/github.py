@@ -1,7 +1,6 @@
 """Pydantic schemas for GitHub repo listing and attachment (Step 3)."""
 
 from typing import Optional
-from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -28,17 +27,3 @@ class RepoAttachRequest(BaseModel):
         description="e.g. octocat/Hello-World",
     )
     branch: Optional[str] = None  # defaults to repo default_branch
-
-
-class RepoAttachResponse(BaseModel):
-    """Result of attaching + cloning a repo."""
-
-    project_id: UUID
-    github_repo_id: str
-    github_owner: str
-    github_name: str
-    github_full_name: str
-    default_branch: Optional[str] = None
-    clone_path: str = Field(
-        ..., description="Absolute path of the shallow clone on server disk"
-    )

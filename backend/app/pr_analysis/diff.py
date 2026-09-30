@@ -109,6 +109,15 @@ def parse_patch(patch: str) -> List[DiffHunk]:
 
         # File header: --- a/path or +++ b/path
         if line.startswith("--- ") or line.startswith("+++ "):
+            # Extract the file path from the +++ b/path line
+            if line.startswith("+++ "):
+                path = line[4:].strip()
+                # Strip the b/ prefix and any trailing metadata
+                if path.startswith("b/"):
+                    path = path[2:]
+                # Handle /dev/null (deleted files)
+                if path != "/dev/null":
+                    current_file = path.split("\t")[0]
             i += 1
             continue
 

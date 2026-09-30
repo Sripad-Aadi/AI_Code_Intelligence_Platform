@@ -9,15 +9,12 @@ from app.api import (
     analysis_router,
     auth_router,
     chat_router,
-    findings_router,
     ingestion_router,
     observability_router,
     projects_router,
     pull_requests_router,
     repos_router,
-    risk_router,
     search_router,
-    webhooks_router,
 )
 
 
@@ -56,18 +53,22 @@ def health_check():
     return {"status": "ok"}
 
 
+# Stub endpoint for clients that probe /v1/models on startup (e.g. Groq client).
+# Returns an empty list so the probe succeeds instead of 404ing.
+@app.get("/v1/models")
+def list_models():
+    return {"object": "list", "data": []}
+
+
 # API routers. `search_router` is mounted before `repos_router` on purpose:
 # its `/repos/search` route must be matched ahead of any `/repos/{repo_id}`
 # route, or "search across repos" would be read as a repo id.
 app.include_router(auth_router)
 app.include_router(search_router)
 app.include_router(chat_router)
-app.include_router(findings_router)
-app.include_router(risk_router)
 app.include_router(projects_router)
 app.include_router(pull_requests_router)
 app.include_router(repos_router)
 app.include_router(ingestion_router)
 app.include_router(analysis_router)
 app.include_router(observability_router)
-app.include_router(webhooks_router)

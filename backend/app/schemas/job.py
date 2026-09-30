@@ -15,6 +15,7 @@ class AnalysisJobRead(BaseModel):
     id: UUID
     repo_id: UUID
     status: str  # queued | running | completed | failed
+    mode: str = "full"  # full | incremental
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     error: Optional[str] = None

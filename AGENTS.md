@@ -39,10 +39,10 @@ files, 39 symbols) polled like the Analysis-status page does.
 
 ```powershell
 cd backend
-venv\Scripts\python -m pytest                        # tests (38: 3 smoke + 6 ingestion + 11 analysis + 18 chunking)
+venv\Scripts\python -m pytest                        # tests (68: 3 smoke + 6 ingestion + 11 analysis + 18 chunking + 5 chat + 6 risk + 14 misc)
 venv\Scripts\python -m ruff check app tests alembic  # lint: E/W/F/I, line 88
 venv\Scripts\python -m ruff format --check app tests alembic
-venv\Scripts\uvicorn app.main:app --reload           # API on :8000
+venv\Scripts\uvicorn app.main:app --reload --reload-exclude '.clones'  # API on :8000 (exclude clones from reload watch)
 venv\Scripts\celery -A app.worker worker --pool=solo --loglevel=info  # Step 5 worker (2nd terminal)
 venv\Scripts\alembic revision --autogenerate -m "msg"
 venv\Scripts\alembic upgrade head
@@ -248,7 +248,7 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   replay a consumed code and trigger GitHub's `bad_verification_code`; API
   clients keep the JSON response), `GET /auth/github/status`,
   `DELETE /auth/github` (unlink — frees the `github_id`, exposed as the
-  "Unlink" button next to the linked badge in `LinkGithub.tsx`).
+  "Unlink" button on the Profile page).
   `FRONTEND_URL` (default `http://localhost:5173`) is a config setting.
   Because `uq_users_github_id` makes a GitHub account belong to exactly one
   user row, the callback **rejects a conflicting link with 409** (a clear
@@ -263,12 +263,11 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   structure: `GET /repos/{id}/files` (path/limit/offset), `GET /files/{file_id}`
   (file + its symbols), `GET /repos/{id}/symbols` (kind/name filters), and
   `GET /repos/{id}/edges?edge_type=imports|belongs_to` (file→file / symbol→file).
-  `search` (Step 8), `chat` (Step 9), `findings` + `risk` (Steps 11–12) and
+  `search` (Step 8), `chat` (Step 9), `pull_requests` (Step 14) and
   `observability` are mounted as well — `search_router` is deliberately
   registered **before** `repos_router`, or `/repos/search` would be swallowed
-  by `/repos/{repo_id}`. `webhooks` is mounted but only
-  half-implemented. All product routers are mounted now (`pull_requests` was
-  the last one); only Step 13 (webhook verification), Step 16 (incremental
+  by `/repos/{repo_id}`. The risk model (Steps 10–12) was removed on 2026-09-30
+  after it backfired; only Step 13 (webhook verification), Step 16 (incremental
   indexing) and the Step 17/18 hardening beyond rate limits + timeouts remain
   open.
   `ruff check` and `ruff format --check` are clean — keep them that way (34
@@ -383,7 +382,7 @@ npm run lint           # eslint (react-refresh/only-export-components is strict:
   `GET /jobs/{id}` every 2 s with TanStack Query, stopping at
   completed/failed. Pages: `Login` (supabase-js email/password only, plus a
   UI-less `?token=` deep link for scripted sign-in), `Dashboard` (projects
-  CRUD + GitHub link popup via `components/LinkGithub.tsx`), `ProjectDetail`
+  CRUD), `ProjectDetail`
   (attach repo from `GET /user/repos`, analyze → navigate to `/jobs/:id?repo=`),
   `AnalysisStatus` (live poll + counts + language histogram + history),
   `RepoExplorer` (file tree built client-side from flat paths, symbol table

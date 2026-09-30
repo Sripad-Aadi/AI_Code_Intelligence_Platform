@@ -4,28 +4,12 @@ import { Link } from 'react-router-dom'
 import { getPRAnalysis } from '../api/client'
 import { usePageTitle } from '../hooks/usePageTitle'
 
-const LEVEL_STYLES = {
-  low: 'bg-emerald-100 text-emerald-700',
-  medium: 'bg-amber-100 text-amber-700',
-  high: 'bg-rose-100 text-rose-700',
-} as const
-
-type RiskLevel = 'low' | 'medium' | 'high'
-
-function RiskBadge({ level }: { level: RiskLevel }) {
-  return (
-    <span className={`badge ${LEVEL_STYLES[level]}`}>
-      {level.charAt(0).toUpperCase() + level.slice(1)}
-    </span>
-  )
-}
-
 function SummaryCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="card p-4">
-      <p className="text-xs text-slate-500 uppercase tracking-wide">{label}</p>
-      <p className="mt-1 text-3xl font-bold text-slate-900">{value}</p>
-      <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+      <p className="text-xs text-stone-500 uppercase tracking-wide">{label}</p>
+      <p className="mt-1 text-3xl font-bold text-stone-900">{value}</p>
+      <div className="mt-2 h-1.5 bg-stone-100 rounded-full overflow-hidden">
         <div className={`${color} h-full rounded-full`} style={{ width: '100%' }} />
       </div>
     </div>
@@ -56,12 +40,12 @@ export default function PRDashboard() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm text-slate-400">
-            <Link to="/" className="hover:text-slate-600">
+          <p className="text-sm text-stone-400">
+            <Link to="/" className="hover:text-stone-600">
               Projects
             </Link>{' '}
             /{' '}
-            <Link to={`/repos/${repoId}`} className="hover:text-slate-600">
+            <Link to={`/repos/${repoId}`} className="hover:text-stone-600">
               Repository
             </Link>{' '}
             / PR #{prNum}
@@ -69,8 +53,8 @@ export default function PRDashboard() {
           <h1 className="mt-1 text-xl font-bold text-slate-900">
             PR #{prNum} Analysis
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Impact analysis, risk scores, and recommended tests for this pull request.
+          <p className="mt-1 text-sm text-stone-500">
+            Impact analysis, affected files, and recommended tests for this pull request.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -86,7 +70,7 @@ export default function PRDashboard() {
       </div>
 
       {analysis.isLoading ? (
-        <p className="text-sm text-slate-400">Loading analysis…</p>
+        <p className="text-sm text-stone-400">Loading analysis…</p>
       ) : analysis.isError ? (
         <p className="text-sm text-rose-600">
           Failed to load analysis: {(analysis.error as Error).message}
@@ -94,34 +78,11 @@ export default function PRDashboard() {
       ) : analysis.data ? (
         <>
           {/* Summary cards */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <SummaryCard label="Files Changed" value={analysis.data.files_changed} color="bg-indigo-500" />
             <SummaryCard label="Symbols Changed" value={analysis.data.symbols_changed} color="bg-sky-500" />
             <SummaryCard label="Affected Files" value={analysis.data.affected_files_count} color="bg-amber-500" />
             <SummaryCard label="Test Files" value={analysis.data.test_files_count} color="bg-emerald-500" />
-            <div className="card p-4">
-              <p className="text-xs text-slate-500 uppercase tracking-wide">Risk Distribution</p>
-              <div className="mt-2 flex gap-2">
-                <div className="flex-1">
-                  <div className="flex items-center gap-1 text-xs">
-                    <span className="w-2 h-2 rounded-full bg-rose-500" />
-                    <span>High: {analysis.data.high_risk_symbols}</span>
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-1 text-xs">
-                    <span className="w-2 h-2 rounded-full bg-amber-500" />
-                    <span>Med: {analysis.data.medium_risk_symbols}</span>
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-1 text-xs">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span>Low: {analysis.data.low_risk_symbols}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* AI Summary */}
@@ -129,14 +90,14 @@ export default function PRDashboard() {
         <div className="card p-4">
           <h2 className="label mb-2">AI Impact Summary</h2>
           {analysis.data.summary && (
-            <p className="text-sm text-slate-700 whitespace-pre-line">
+            <p className="text-sm text-stone-700 whitespace-pre-line">
               {analysis.data.summary}
             </p>
           )}
           {analysis.data.key_risks.length > 0 && (
             <ul className="mt-2 list-disc pl-5 space-y-1">
               {analysis.data.key_risks.map((risk, i) => (
-                <li key={i} className="text-sm text-slate-700">
+                <li key={i} className="text-sm text-stone-700">
                   {risk}
                 </li>
               ))}
@@ -145,46 +106,32 @@ export default function PRDashboard() {
         </div>
       )}
 
-      {/* Changed Symbols with Risk */}
+      {/* Changed Symbols */}
           <div className="card overflow-hidden">
-            <h2 className="label px-4 pt-4">Changed Symbols (with Risk Scores)</h2>
+            <h2 className="label px-4 pt-4">Changed Symbols</h2>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50">
+                  <tr className="border-b border-stone-200 bg-stone-50">
                     <th className="th">Symbol</th>
                     <th className="th">Kind</th>
                     <th className="th">File</th>
                     <th className="th">Lines</th>
                     <th className="th">Changed Lines</th>
-                    <th className="th">Risk</th>
-                    <th className="th">Confidence</th>
                   </tr>
                 </thead>
                 <tbody>
                   {analysis.data.changed_symbols.map((s) => (
-                    <tr key={s.symbol_id} className="border-b border-slate-100 hover:bg-slate-50/50">
+                    <tr key={s.symbol_id} className="border-b border-stone-100 hover:bg-stone-50/50">
                       <td className="td font-mono text-xs font-semibold text-indigo-700">{s.symbol_name}</td>
                       <td className="td">
-                        <span className="badge bg-slate-100 text-slate-600 text-xs">{s.symbol_kind}</span>
+                        <span className="badge bg-stone-100 text-stone-600 text-xs">{s.symbol_kind}</span>
                       </td>
-                      <td className="td max-w-56 truncate font-mono text-xs text-slate-500">{s.file_path}</td>
-                      <td className="td text-xs text-slate-500">{s.start_line}–{s.end_line}</td>
+                      <td className="td max-w-56 truncate font-mono text-xs text-stone-500">{s.file_path}</td>
+                      <td className="td text-xs text-stone-500">{s.start_line}–{s.end_line}</td>
                       <td className="td font-mono text-xs">
                         {s.changed_lines.slice(0, 5).join(', ')}
                         {s.changed_lines.length > 5 && '…'}
-                      </td>
-                      <td className="td">
-                        {s.risk_level ? <RiskBadge level={s.risk_level} /> : <span className="text-slate-400">—</span>}
-                      </td>
-                      <td className="td">
-                        {s.risk_probability ? (
-                          <span className="badge bg-slate-100 text-slate-600 font-mono">
-                            {Math.round(s.risk_probability * 100)}%
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">—</span>
-                        )}
                       </td>
                     </tr>
                   ))}
@@ -196,15 +143,15 @@ export default function PRDashboard() {
           {/* Affected Files (1-hop fan-in) */}
           <div className="card overflow-hidden">
             <h2 className="label px-4 pt-4">Potentially Affected Files (1-hop fan-in)</h2>
-            <p className="px-4 py-2 text-xs text-slate-500 border-b border-slate-100">
+            <p className="px-4 py-2 text-xs text-stone-500 border-b border-stone-100">
               Files that import the changed files. Review these for potential breakage.
             </p>
             {analysis.data.affected_files.length === 0 ? (
-              <p className="p-4 text-sm text-slate-400">No affected files detected.</p>
+              <p className="p-4 text-sm text-stone-400">No affected files detected.</p>
             ) : (
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50">
+                  <tr className="border-b border-stone-200 bg-stone-50">
                     <th className="th">Affected File</th>
                     <th className="th">Reason</th>
                     <th className="th">Via Symbol/File</th>
@@ -212,12 +159,12 @@ export default function PRDashboard() {
                 </thead>
                 <tbody>
                   {analysis.data.affected_files.map((af, i) => (
-                    <tr key={i} className="border-b border-slate-100 hover:bg-slate-50/50">
+                    <tr key={i} className="border-b border-stone-100 hover:bg-stone-50/50">
                       <td className="td max-w-80 truncate font-mono text-xs">{af.file_path}</td>
                       <td className="td">
                         <span className="badge bg-indigo-100 text-indigo-700 text-xs">{af.reason}</span>
                       </td>
-                      <td className="td max-w-56 truncate font-mono text-xs text-slate-500">{af.via_symbol}</td>
+                      <td className="td max-w-56 truncate font-mono text-xs text-stone-500">{af.via_symbol}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -228,19 +175,19 @@ export default function PRDashboard() {
           {/* Recommended Test Files */}
           <div className="card overflow-hidden">
             <h2 className="label px-4 pt-4">Recommended Test Files</h2>
-            <p className="px-4 py-2 text-xs text-slate-500 border-b border-slate-100">
+            <p className="px-4 py-2 text-xs text-stone-500 border-b border-stone-100">
               Heuristically identified test files related to changed/affected code.
             </p>
             {analysis.data.test_files.length === 0 ? (
-              <p className="p-4 text-sm text-slate-400">No test files found.</p>
+              <p className="p-4 text-sm text-stone-400">No test files found.</p>
             ) : (
-              <ul className="divide-y divide-slate-100">
+              <ul className="divide-y divide-stone-100">
                 {analysis.data.test_files.map((tf, i) => (
                   <li key={i} className="px-4 py-2 flex items-center gap-3">
                     <span className="w-5 h-5 rounded bg-emerald-100 flex items-center justify-center">
                       <svg className="w-3 h-3 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                     </span>
-                    <span className="font-mono text-xs text-slate-700">{tf}</span>
+                    <span className="font-mono text-xs text-stone-700">{tf}</span>
                   </li>
                 ))}
               </ul>
@@ -255,7 +202,7 @@ export default function PRDashboard() {
           </div>
         </>
       ) : (
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-stone-400">
           No analysis data available. Click "Run Analysis" to analyze this PR.
         </p>
       )}

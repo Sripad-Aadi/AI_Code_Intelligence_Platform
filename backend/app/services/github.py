@@ -3,7 +3,7 @@
 Thin wrappers around the GitHub OAuth and REST APIs using httpx.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from urllib.parse import urlencode
 
 import httpx
@@ -117,22 +117,6 @@ def get_repo(access_token: str, full_name: str) -> Dict[str, Any]:
     }
 
 
-def get_branch_default_sha(
-    access_token: str, full_name: str, branch: str
-) -> Optional[str]:
-    """Return the HEAD sha for a branch, or None if it can't be resolved."""
-    try:
-        with httpx.Client(timeout=15.0) as client:
-            resp = client.get(
-                f"{GITHUB_API_BASE}/repos/{full_name}/branches/{branch}",
-                headers={**_api_headers, "Authorization": f"Bearer {access_token}"},
-            )
-            resp.raise_for_status()
-            return resp.json()["commit"]["sha"]
-    except (httpx.HTTPStatusError, KeyError):
-        return None
-
-
 def get_pull_request(
     access_token: str, owner: str, repo_name: str, number: int
 ) -> Dict[str, Any]:
@@ -187,74 +171,3 @@ def list_pull_requests(
         }
         for pr in pulls
     ]
-
-
-async def register_webhook_on_repo(
-    access_token: str,
-    owner: str,
-    repo_name: str,
-    webhook_url: str,
-    secret: str,
-) -> Dict[str, Any]:
-    """
-    Register a webhook on the GitHub repository.
-
-    Events: pull_request (opened, synchronize, reopened), push
-    """
-    url = f"{GITHUB_API_BASE}/repos/{owner}/{repo_name}/hooks"
-    headers = {
-        **_api_headers,
-        "Authorization": f"Bearer {access_token}",
-    }
-    payload = {
-        "name": "web",
-        "active": True,
-        "events": ["pull_request", "push"],
-        "config": {
-            "url": webhook_url,
-            "content_type": "json",
-            "secret": secret,
-            "insecure_ssl": "0",
-        },
-    }
-
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(url, headers=headers, json=payload)
-        resp.raise_for_status()
-        return resp.json()
-
-
-async def list_webhooks_on_repo(
-    access_token: str,
-    owner: str,
-    repo_name: str,
-) -> List[Dict[str, Any]]:
-    """List webhooks registered on the GitHub repository."""
-    url = f"{GITHUB_API_BASE}/repos/{owner}/{repo_name}/hooks"
-    headers = {
-        **_api_headers,
-        "Authorization": f"Bearer {access_token}",
-    }
-
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get(url, headers=headers)
-        resp.raise_for_status()
-        return resp.json()
-
-
-async def delete_webhook_on_repo(
-    access_token: str,
-    owner: str,
-    repo_name: str,
-    hook_id: int,
-) -> None:
-    """Delete a webhook from the GitHub repository."""
-    url = f"{GITHUB_API_BASE}/repos/{owner}/{repo_name}/hooks/{hook_id}"
-    headers = {
-        **_api_headers,
-        "Authorization": f"Bearer {access_token}",
-    }
-
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.delete(url, headers=headers)
-        resp.raise_for_status()

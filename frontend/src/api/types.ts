@@ -42,6 +42,7 @@ export interface AnalysisJob {
   id: string
   repo_id: string
   status: JobStatus
+  mode: string
   started_at: string | null
   finished_at: string | null
   error: string | null
@@ -147,60 +148,7 @@ export interface ChatResponse {
   evidence: EvidenceChunk[]
 }
 
-// --- Findings (Step 12) ---
-
-export type RiskLevel = 'low' | 'medium' | 'high'
-
-export interface RiskFinding {
-  id: string
-  repo_id: string
-  symbol_id: string
-  risk_level: RiskLevel
-  probability: number
-  features_json: Record<string, unknown>
-  model_version: string
-  created_at: string
-  updated_at: string
-  symbol_name: string
-  symbol_kind: string
-  file_path: string
-  start_line: number
-  end_line: number
-}
-
-export interface RiskFindingListResponse {
-  repo_id: string
-  findings: RiskFinding[]
-  total: number
-  limit: number
-  offset: number
-}
-
-export interface FindingsSummary {
-  repo_id: string
-  by_level: Record<RiskLevel, number>
-  total: number
-}
-
 // --- PR Analysis (Step 14-15) ---
-
-export interface ChangedSymbolOut {
-  symbol_id: string
-  file_path: string
-  symbol_name: string
-  symbol_kind: string
-  start_line: number
-  end_line: number
-  changed_lines: number[]
-  risk_level?: RiskLevel
-  risk_probability?: number
-}
-
-export interface AffectedFileOut {
-  file_path: string
-  reason: string
-  via_symbol: string
-}
 
 export interface PRAnalysisResult {
   repo_id: string
@@ -210,12 +158,21 @@ export interface PRAnalysisResult {
   symbols_changed: number
   affected_files_count: number
   test_files_count: number
-  changed_symbols: ChangedSymbolOut[]
-  affected_files: AffectedFileOut[]
+  changed_symbols: Array<{
+    symbol_id: string
+    file_path: string
+    symbol_name: string
+    symbol_kind: string
+    start_line: number
+    end_line: number
+    changed_lines: number[]
+  }>
+  affected_files: Array<{
+    file_path: string
+    reason: string
+    via_symbol: string
+  }>
   test_files: string[]
-  high_risk_symbols: number
-  medium_risk_symbols: number
-  low_risk_symbols: number
   summary: string
   key_risks: string[]
 }
@@ -241,37 +198,6 @@ export interface JobStatsResponse {
   total_files_indexed: number
   total_symbols_indexed: number
   total_chunks_embedded: number
-}
-
-export interface BenchmarkStatusResponse {
-  retrieval_benchmark_exists: boolean
-  risk_eval_exists: boolean
-  last_run: string | null
-}
-
-// --- Webhooks (Step 13) ---
-
-export interface Webhook {
-  id: number
-  url: string
-  events: string[]
-  active: boolean
-  created_at: string
-  updated_at: string
-}
-
-export interface WebhookRegisterResponse {
-  status: string
-  webhook_id: number
-}
-
-export interface WebhookListResponse {
-  webhooks: Webhook[]
-}
-
-export interface WebhookDeleteResponse {
-  status: string
-  hook_id: number
 }
 
 // --- Cost Tracking (Step 19) ---

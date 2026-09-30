@@ -23,9 +23,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api.ingestion import _get_owned_repo
 from app.core.rate_limit import pr_analysis_rate_limit
-from app.core.security import CurrentUser
+from app.core.security import CurrentUser, get_owned_repo
 from app.db.session import get_db
 from app.models.project import Project
 from app.models.user import User
@@ -90,7 +89,7 @@ def list_pulls(
     current_user: CurrentUser = Depends(pr_analysis_rate_limit),
 ) -> List[PullRequestSummary]:
     """Open pull requests for one owned repository (dashboard entry)."""
-    repo = _get_owned_repo(repo_id, current_user, db)
+    repo = get_owned_repo(repo_id, current_user, db)
     owner, name, token = _owner_github_token(db, repo.id)
     try:
         pulls = github_service.list_pull_requests(token, owner, name, state=state)
@@ -110,7 +109,7 @@ def analyze_pull_request(
     current_user: CurrentUser = Depends(pr_analysis_rate_limit),
 ) -> PRAnalysisResult:
     """Run the Step 14 chain for one PR and return structured JSON."""
-    repo = _get_owned_repo(repo_id, current_user, db)
+    repo = get_owned_repo(repo_id, current_user, db)
     owner, name, token = _owner_github_token(db, repo.id)
     try:
         meta = github_service.get_pull_request(token, owner, name, pr_number)

@@ -95,27 +95,6 @@ async def pr_analysis_rate_limit(
     return current_user
 
 
-# PR analysis webhook: 50 requests/minute per repo (webhook bursts)
-async def pr_webhook_rate_limit(
-    request: Request,
-) -> bool:
-    """Rate limit: 50 requests/minute for PR webhook endpoint (by delivery ID)."""
-    delivery_id = request.headers.get("x-github-delivery", "unknown")
-    allowed, remaining = check_rate_limit(
-        user_id=f"webhook:{delivery_id}",
-        endpoint="pr_webhook",
-        max_requests=50,
-        window_seconds=60,
-    )
-    if not allowed:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Webhook rate limit exceeded",
-        )
-    request.state.rate_limit_remaining = remaining
-    return True
-
-
 # Generic dependency for custom limits
 def create_rate_limiter(
     endpoint: str,

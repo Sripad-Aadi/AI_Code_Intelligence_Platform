@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Dict, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -132,45 +132,6 @@ def get_benchmark_status(
     )
 
 
-@router.post("/benchmarks/retrieval/run")
-def run_retrieval_benchmark(
-    repo_id: UUID,
-    k: int = Query(default=10, ge=1, le=50),
-    db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(observability_rate_limit),
-) -> dict:
-    """Run retrieval benchmark for a repository."""
-    # Verify repo ownership
-    from app.api.ingestion import _get_owned_repo
-
-    _get_owned_repo(repo_id, current_user, db)
-
-    # Load benchmark questions for this repo
-    from app.benchmarks.retrieval_benchmark import (
-        load_benchmark_questions,
-        run_retrieval_benchmark,
-    )
-
-    questions = load_benchmark_questions()
-    repo_questions = [q for q in questions if q.repo_id == str(repo_id)]
-
-    if not repo_questions:
-        raise HTTPException(
-            404,
-            f"No benchmark questions found for repo {repo_id}. "
-            "Create benchmarks/retrieval_questions.json with questions for this repo.",
-        )
-
-    results, summary = run_retrieval_benchmark(db, repo_questions, k=k)
-
-    return {
-        "repo_id": str(repo_id),
-        "questions_run": len(repo_questions),
-        "summary": summary.__dict__,
-        "results": [r.__dict__ for r in results],
-    }
-
-
 # --- Cost Tracking Endpoints ---
 
 
@@ -188,10 +149,10 @@ def get_cost_summary(
     repo_id: Optional[UUID] = Query(default=None, description="Filter by repo"),
     current_user: CurrentUser = Depends(observability_rate_limit),
 ) -> CostSummaryResponse:
-    """Get LLM cost summary from in-memory tracker."""
+    """Get LLM cost summary, filtered to the caller's own usage."""
     tracker = get_cost_tracker()
-    summary = tracker.get_summary(repo_id=repo_id)
-    by_model = tracker.get_by_model()
+    summary = tracker.get_summary(repo_id=repo_id, user_id=str(current_user.id))
+    by_model = tracker.get_by_model(user_id=str(current_user.id))
 
     return CostSummaryResponse(
         total_calls=summary["total_calls"],
@@ -201,15 +162,3 @@ def get_cost_summary(
         avg_latency_ms=summary["avg_latency_ms"],
         by_model=by_model,
     )
-
-
-@router.post("/costs/reset")
-def reset_cost_tracker(
-    current_user: CurrentUser = Depends(observability_rate_limit),
-) -> dict:
-    """Reset the in-memory cost tracker (for testing)."""
-    global _tracker
-    from app.core.cost_tracking import _tracker as tracker
-
-    tracker._records.clear()
-    return {"status": "reset", "message": "Cost tracker cleared"}

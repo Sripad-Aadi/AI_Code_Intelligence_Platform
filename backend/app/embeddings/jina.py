@@ -20,9 +20,14 @@ import logging
 import os
 import threading
 import time
+import warnings
 from typing import List, Sequence
 
 from app.config import settings
+
+# Suppress the "optimum is not installed" warning from the Jina model's
+# configuration_bert.py — we don't use ONNX, so the warning is noise.
+warnings.filterwarnings("ignore", message=".*optimum is not installed.*")
 
 log = logging.getLogger(__name__)
 

@@ -28,13 +28,27 @@ from uuid import UUID
 from langchain_core.tools import BaseTool, StructuredTool
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models.code_embedding import CodeEmbedding
 from app.models.edge import CodeEdge
 from app.models.file import SourceFile
+from app.models.repository import ProjectRepository
 from app.models.symbol import Symbol
 from app.retrieval.search import search_code
-from app.risk_model.features import repo_clone_root
 from app.schemas.chat import EvidenceChunk
+
+
+def repo_clone_root(db: Session, repo_id: UUID) -> Optional[Path]:
+    """Clone directory for this repository, or None if it was never cloned."""
+    repo = db.get(ProjectRepository, repo_id)
+    if repo is None or not repo.github_owner or not repo.github_name:
+        return None
+    return (
+        Path(settings.CLONE_ROOT_DIR)
+        / str(repo.project_id)
+        / f"{repo.github_owner}__{repo.github_name}"
+    )
+
 
 log = logging.getLogger(__name__)
 

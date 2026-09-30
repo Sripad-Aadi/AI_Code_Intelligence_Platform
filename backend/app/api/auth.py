@@ -73,8 +73,6 @@ async def github_login(
         )
 
     url = github.build_authorize_url(state)
-    from fastapi.responses import RedirectResponse
-
     return RedirectResponse(url)
 
 
@@ -171,6 +169,35 @@ async def github_unlink(
     db.add(user)
     db.commit()
     return {"status": "unlinked"}
+
+
+@router.post("/github/store-token")
+async def store_github_token(
+    payload: dict,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Store the GitHub access token on the user row after OAuth sign-in.
+
+    Called by the frontend OAuth callback when Supabase returns a
+    ``provider_token`` (the GitHub access token from the OAuth flow).
+    """
+    token = payload.get("github_token")
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="github_token is required",
+        )
+    user = db.get(User, current_user.id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+    user.github_access_token = token
+    db.add(user)
+    db.commit()
+    return {"status": "ok"}
 
 
 @router.get("/github/status")

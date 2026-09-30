@@ -1,7 +1,10 @@
 """Supabase JWT authentication dependency."""
 
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from app.models.repository import ProjectRepository
 
 import httpx
 from fastapi import Depends, HTTPException, status
@@ -147,3 +150,25 @@ def require_project_owner(
             detail="Not authorized to access this project",
         )
     return current_user
+
+
+def get_owned_repo(
+    repo_id: UUID, current_user: CurrentUser, db: Session
+) -> "ProjectRepository":
+    """Return the repo row if it belongs to one of the user's projects.
+
+    Shared helper used by ingestion, analysis, search, chat, and PR routers
+    to enforce that a repository belongs to the caller's project.
+    """
+    from app.models.project import Project
+    from app.models.repository import ProjectRepository
+
+    repo = db.get(ProjectRepository, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    project = db.get(Project, repo.project_id)
+    if project is None or project.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=403, detail="Not authorized to access this repository"
+        )
+    return repo

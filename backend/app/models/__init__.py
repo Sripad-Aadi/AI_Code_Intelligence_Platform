@@ -7,7 +7,6 @@ from app.models.import_stmt import ImportStatement
 from app.models.job import AnalysisJob
 from app.models.project import Project
 from app.models.repository import ProjectRepository
-from app.models.risk_finding import RiskFinding
 from app.models.symbol import Symbol
 from app.models.user import User
 
@@ -21,5 +20,4 @@ __all__ = [
     "ImportStatement",
     "CodeEdge",
     "CodeEmbedding",
-    "RiskFinding",
 ]

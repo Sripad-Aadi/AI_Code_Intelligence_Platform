@@ -1,6 +1,6 @@
 """Step 14 — PR analysis chain.
 
-Combines diff fetch → impact analysis → risk scores → LLM summary into a
+Combines diff fetch → impact analysis → LLM summary into a
 structured Pydantic output for the frontend PR dashboard.
 
 The LLM step is deliberately *not* a tool-calling agent (unlike chat): the
@@ -44,8 +44,6 @@ class ChangedSymbolOut(BaseModel):
     start_line: int
     end_line: int
     changed_lines: List[int]
-    risk_level: Optional[str] = None
-    risk_probability: Optional[float] = None
 
 
 class AffectedFileOut(BaseModel):
@@ -72,11 +70,6 @@ class PRAnalysisResult(BaseModel):
     affected_files: List[AffectedFileOut]
     test_files: List[str]
 
-    # High-level risk summary
-    high_risk_symbols: int
-    medium_risk_symbols: int
-    low_risk_symbols: int
-
     # LLM impact summary (Step 14 chain output; empty when ungenerated)
     summary: str = ""
     key_risks: List[str] = []
@@ -95,8 +88,8 @@ class PRSummary(BaseModel):
 
 
 SUMMARY_SYSTEM = """\
-You review a pull request from its diff highlights, changed symbols, affected
-files and risk scores. Reply with a single JSON object and nothing else:
+You review a pull request from its diff highlights, changed symbols and affected
+files. Reply with a single JSON object and nothing else:
 {"summary_markdown": "<2-4 sentence overview plus what to review carefully>",
 "key_risks": ["<at most 5 short risk bullets>"]}.
 Rules: only describe what the evidence shows; cite file paths you were given;
@@ -137,12 +130,9 @@ def _prompt_context(
             hunks.append("\n".join(hunk.lines[:40]))
         lines.append(f"--- {changed.file_path} ({changed.status})\n" + "\n".join(hunks))
     for symbol in impact.changed_symbols[:30]:
-        risk = impact.risk_scores.get(str(symbol.symbol_id), {})
         lines.append(
             f"symbol: {symbol.symbol_kind} {symbol.symbol_name} "
-            f"in {symbol.file_path}:{symbol.start_line}-{symbol.end_line} "
-            f"risk={risk.get('risk_level', 'unknown')} "
-            f"({risk.get('probability', 0)})"
+            f"in {symbol.file_path}:{symbol.start_line}-{symbol.end_line}"
         )
     for affected in impact.affected_files[:30]:
         lines.append(
@@ -227,34 +217,18 @@ def _impact_to_output(
     summary: Optional[PRSummary] = None,
 ) -> PRAnalysisResult:
     """Convert ImpactResult to structured API output."""
-    changed_symbols_out = []
-    high = medium = low = 0
-
-    for s in impact.changed_symbols:
-        risk = impact.risk_scores.get(str(s.symbol_id), {})
-        level = risk.get("risk_level")
-        prob = risk.get("probability")
-
-        if level == "high":
-            high += 1
-        elif level == "medium":
-            medium += 1
-        elif level == "low":
-            low += 1
-
-        changed_symbols_out.append(
-            ChangedSymbolOut(
-                symbol_id=str(s.symbol_id),
-                file_path=s.file_path,
-                symbol_name=s.symbol_name,
-                symbol_kind=s.symbol_kind,
-                start_line=s.start_line,
-                end_line=s.end_line,
-                changed_lines=s.changed_lines,
-                risk_level=level,
-                risk_probability=prob,
-            )
+    changed_symbols_out = [
+        ChangedSymbolOut(
+            symbol_id=str(s.symbol_id),
+            file_path=s.file_path,
+            symbol_name=s.symbol_name,
+            symbol_kind=s.symbol_kind,
+            start_line=s.start_line,
+            end_line=s.end_line,
+            changed_lines=s.changed_lines,
         )
+        for s in impact.changed_symbols
+    ]
 
     return PRAnalysisResult(
         repo_id=str(repo_id),
@@ -274,9 +248,6 @@ def _impact_to_output(
             for af in impact.affected_files
         ],
         test_files=impact.test_files,
-        high_risk_symbols=high,
-        medium_risk_symbols=medium,
-        low_risk_symbols=low,
         summary=summary.summary_markdown if summary is not None else "",
         key_risks=list(summary.key_risks) if summary is not None else [],
     )
@@ -323,9 +294,6 @@ async def run_pr_analysis(
             changed_symbols=[],
             affected_files=[],
             test_files=[],
-            high_risk_symbols=0,
-            medium_risk_symbols=0,
-            low_risk_symbols=0,
             summary="",
             key_risks=[],
         )
@@ -344,32 +312,4 @@ async def run_pr_analysis(
     # Step 4: Convert to output
     return _impact_to_output(
         repo_id, pr_number, pr_title, changed_files, impact, summary
-    )
-
-
-def run_pr_analysis_sync(
-    db: Session,
-    repo_id: UUID,
-    pr_number: int,
-    pr_title: str,
-    pr_body: str,
-    head_sha: str,
-    base_sha: str,
-    access_token: str,
-) -> PRAnalysisResult:
-    """
-    Synchronous wrapper for Celery task.
-    """
-    import asyncio
-
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    return loop.run_until_complete(
-        run_pr_analysis(
-            db, repo_id, pr_number, pr_title, pr_body, head_sha, base_sha, access_token
-        )
     )

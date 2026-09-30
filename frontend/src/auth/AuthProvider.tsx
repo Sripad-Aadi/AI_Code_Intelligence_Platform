@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { clearToken, getToken, setToken } from '../api/client'
+import { supabase } from '../lib/supabase'
 import { AuthContext } from './context'
 
 function decodeEmail(token: string): string | null {
@@ -25,12 +26,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('ai-sip:unauthorized', onUnauthorized)
   }, [])
 
+  // Listen for Supabase auth state changes (OAuth callback, sign-in, sign-out)
+  useEffect(() => {
+    if (!supabase) return
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.access_token) {
+        setToken(session.access_token)
+        setTokenState(session.access_token)
+      } else if (event === 'SIGNED_OUT') {
+        clearToken()
+        setTokenState(null)
+      }
+      // INITIAL_SESSION with null session: keep the localStorage token
+      // (Supabase hasn't finished initializing yet — don't clear it)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
   const loginWithToken = useCallback((next: string) => {
     setToken(next)
     setTokenState(next)
   }, [])
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    if (supabase) {
+      await supabase.auth.signOut()
+    }
     clearToken()
     setTokenState(null)
   }, [])

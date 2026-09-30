@@ -83,7 +83,6 @@ def test_pr_summary_schema_requires_text():
 
 def _impact(levels):
     symbols = []
-    scores = {}
     for i, level in enumerate(levels):
         sid = uuid4()
         symbols.append(
@@ -98,13 +97,10 @@ def _impact(levels):
                 changed_lines=[2, 3],
             )
         )
-        if level is not None:
-            scores[str(sid)] = {"risk_level": level, "probability": 0.9}
     return ImpactResult(
         changed_symbols=symbols,
         affected_files=[{"file_path": "g.py", "reason": "x", "via_symbol": "fn0"}],
         test_files=["test_f0.py"],
-        risk_scores=scores,
     )
 
 
@@ -133,20 +129,15 @@ def test_github_401_means_relink_not_502():
     assert missing.status_code == 404
 
 
-def test_impact_to_output_counts_levels_and_keeps_lines():
+def test_impact_to_output_maps_symbols_and_keeps_lines():
     repo = uuid4()
     out = _impact_to_output(
         repo, 7, "Add things", [], _impact(["high", "medium", "low", None])
     )
     assert out.repo_id == str(repo)
     assert out.pr_number == 7
-    assert (out.high_risk_symbols, out.medium_risk_symbols, out.low_risk_symbols) == (
-        1,
-        1,
-        1,
-    )
     assert out.symbols_changed == 4
     assert out.changed_symbols[0].changed_lines == [2, 3]
-    assert out.changed_symbols[3].risk_level is None
+    assert out.changed_symbols[0].symbol_name == "fn0"
     assert out.test_files == ["test_f0.py"]
     assert out.summary == "" and out.key_risks == []

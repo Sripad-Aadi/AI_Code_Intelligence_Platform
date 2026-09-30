@@ -19,10 +19,9 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.agents.chat_chain import ChatError, run_chat
-from app.api.ingestion import _get_owned_repo
 from app.config import settings
 from app.core.rate_limit import chat_rate_limit
-from app.core.security import CurrentUser
+from app.core.security import CurrentUser, get_owned_repo
 from app.db.session import get_db
 from app.models.code_embedding import CodeEmbedding
 from app.schemas.chat import ChatRequest, ChatResponse
@@ -83,7 +82,7 @@ def chat(
     The reply cites `path:start-end` for its claims and carries the chunks it
     was grounded on, so the frontend can render sources next to the answer.
     """
-    repo = _get_owned_repo(payload.repo_id, current_user, db)
+    repo = get_owned_repo(payload.repo_id, current_user, db)
     _require_ready(db, repo.id)
 
     try:
@@ -92,6 +91,7 @@ def chat(
             repo_id=repo.id,
             query=payload.query,
             history=payload.chat_history,
+            user_id=str(current_user.id),
         )
     except ChatError as exc:
         log.warning("chat rejected (repo=%s): %s", repo.id, exc)
