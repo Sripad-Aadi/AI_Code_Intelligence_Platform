@@ -34,6 +34,6 @@ backend/app/risk_model/artifacts/evaluation.json
 
 # Misc
 .DS_Store
-
+AGENTS.md
 *.doc
 *.docx 
